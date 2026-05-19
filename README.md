@@ -13,7 +13,7 @@ AniTOR is a lightweight, local-first streaming application that allows you to wa
 ## Usage
 
 * **VPN:** Make sure you have your VPN turned on if it is required.
-* **Launch:** Download and double-click `AniTOR.exe`.
+* **Launch:** Download and double-click `Start_AniTOR.bat`.
 * **Note:** This works best with torrents that contain only one video file.
 
 
