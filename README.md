@@ -1,18 +1,17 @@
-## AniTOR 📺
+# AniTOR 📺
 
-Ad-Free Anime Streaming Engine.
+**Ad-Free Anime Streaming Engine.**
+
 AniTOR is a lightweight, local-first streaming application that allows you to watch anime torrents instantly in your browser.
 
-how does it work?
-1. You pest your megnet link
-2. It loads it chunk by chunk and plays the video. YOu can skip ahead and play it at any timestamp.
-3. The video is stored in a temp folder.
+## How does it work?
 
-Usage:
+* **Paste your magnet link:** Simply input your magnet link.
+* **Stream:** It loads the video chunk-by-chunk and plays it. You can skip ahead and play it at any timestamp.
+* **Cache:** The video is stored in a local temp folder.
 
-1. **make sure you have VPN turned on if its required.**
-2. Download and double click Start_AniTOR.bat 
+## Usage
 
-works best with torrents that contains only one video file.
-
-<img width="1474" height="944" alt="image" src="https://github.com/user-attachments/assets/f57fc2c8-524c-440e-ab9a-df28f8aac100" />
+* **VPN:** Make sure you have your VPN turned on if it is required.
+* **Launch:** Download and double-click `AniTOR.exe`.
+* **Note:** This works best with torrents that contain only one video file.
