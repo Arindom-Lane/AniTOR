@@ -2,7 +2,7 @@
 
 **Ad-Free Anime Streaming Engine.**
 
-AniTOR is a lightweight, local-first streaming application that allows you to watch anime torrents instantly in your browser.
+AniTOR is a lightweight, local-first streaming application that allows you to watch ani movie/TV-shows/Anime instantly in your browser using megnet links.
 
 VLC Integration: Take your stream directly to VLC for a superior playback experience.
 
