@@ -31,9 +31,44 @@ function resetIdleTimer() {
   window.addEventListener(evName, resetIdleTimer, { passive: true });
 });
 
-themeSelect.addEventListener('change', (e) => {
-  document.documentElement.setAttribute('data-theme', e.target.value);
-});
+
+
+function setCookie(name, value, days = 30) {
+  const expires = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Expires=${expires}; Path=/; SameSite=Lax`;
+}
+
+function getCookie(name) {
+  const cookies = document.cookie.split('; ');
+  for (const c of cookies) {
+    const [k, v] = c.split('=');
+    if (decodeURIComponent(k) === name) return decodeURIComponent(v || '');
+  }
+  return null;
+}
+
+
+function deleteCookie(name) {
+  document.cookie = `${encodeURIComponent(name)}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const savedTheme = getCookie('selectedTheme') ;
+  if (savedTheme) {
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    themeSelect.value = savedTheme;
+    themeSelect.innerHTML=`
+      <option value="dark" ${savedTheme === 'dark' ? 'selected' : ''}>Dark Theme</option>
+      <option value="cyan" ${savedTheme === 'cyan' ? 'selected' : ''}>Dark Cyan</option>
+      <option value="light" ${savedTheme === 'light' ? 'selected' : ''}>Off-White</option>
+    `;
+  }});
+
+  themeSelect.addEventListener('change', (e) => {
+    document.documentElement.setAttribute('data-theme', e.target.value);
+    setCookie('selectedTheme', e.target.value, 30);
+  });
+
 
 async function verifyAnimeTitleOnline(rawFileName) {
   try {
