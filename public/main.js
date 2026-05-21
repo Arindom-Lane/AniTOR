@@ -61,6 +61,17 @@ document.addEventListener('DOMContentLoaded', () => {
       <option value="dark" ${savedTheme === 'dark' ? 'selected' : ''}>Dark Theme</option>
       <option value="cyan" ${savedTheme === 'cyan' ? 'selected' : ''}>Dark Cyan</option>
       <option value="light" ${savedTheme === 'light' ? 'selected' : ''}>Off-White</option>
+      <option value="atom-material" ${savedTheme === 'atom-material' ? 'selected' : ''}>Atom Material</option>
+      <option value="default" ${savedTheme === 'default' ? 'selected' : ''}>Default</option>
+      <option value="github-dark" ${savedTheme === 'github-dark' ? 'selected' : ''}>GitHub Dark</option>
+      <option value="hopscotch" ${savedTheme === 'hopscotch' ? 'selected' : ''}>Hopscotch</option>
+      <option value="monokai" ${savedTheme === 'monokai' ? 'selected' : ''}>Monokai</option>
+      <option value="okaidia" ${savedTheme === 'okaidia' ? 'selected' : ''}>Okaidia</option>
+      <option value="one-dark" ${savedTheme === 'one-dark' ? 'selected' : ''}>One Dark</option>
+      <option value="pojoaque" ${savedTheme === 'pojoaque' ? 'selected' : ''}>Pojoaque</option>
+      <option value="solarized-dark" ${savedTheme === 'solarized-dark' ? 'selected' : ''}>Solarized Dark</option>
+      <option value="twilight" ${savedTheme === 'twilight' ? 'selected' : ''}>Twilight</option>
+      <option value="xonokai" ${savedTheme === 'xonokai' ? 'selected' : ''}>Xonokai</option>
     `;
   }});
 
