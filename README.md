@@ -21,3 +21,19 @@ VLC Integration: Take your stream directly to VLC for a superior playback experi
 
 
 <img width="1474" height="944" alt="image" src="https://github.com/user-attachments/assets/f57fc2c8-524c-440e-ab9a-df28f8aac100" />
+
+
+## Used:
+Node.js
+
+Express
+
+webtorrent (Torrent client)
+
+Artplayer
+
+
+
+
+
+

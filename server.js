@@ -42,7 +42,7 @@ function updateRegistryItem(infoHash, updates) {
 // --- HELPER FUNCTIONS ---
 function getHashFromMagnet(magnet) {
   if (!magnet) return null;
-  const clean = magnet.trim();
+  const clean = magnet.trim(); 
   if (/^[a-fA-F0-9]{40}$/.test(clean)) return clean.toLowerCase();
   const match = clean.match(/urn:btih:([a-zA-Z0-9]+)/i);
   return match ? match[1].toLowerCase() : null;
