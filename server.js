@@ -264,3 +264,16 @@ app.listen(PORT, () => {
     if (err) console.log('Ready! Please open http://localhost:3000 in your browser.');
   });
 });
+
+app.post('/api/pause-torrent', (req, res) => {
+    const { infoHash } = req.body;
+    const torrent = client.get(infoHash); // 'client' is your WebTorrent instance
+
+    if (torrent) {
+        torrent.pause(); // This is the built-in WebTorrent function to halt downloading
+        console.log(`Torrent ${infoHash} has been paused.`);
+        res.status(200).send({ status: 'paused' });
+    } else {
+        res.status(404).send({ error: 'Torrent not found' });
+    }
+});

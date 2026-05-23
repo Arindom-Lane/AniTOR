@@ -146,7 +146,27 @@ async function runStreamPipeline(targetLink, options = {}) {
       fullscreen: true,
       setting: true,
       playbackRate: true,
-      aspectRatio: true
+      aspectRatio: true,
+
+      events: {
+        // Triggered when user clicks pause
+        pause: (art) => {
+            fetch('/api/pause-torrent', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ infoHash: currentHash }) 
+            });
+        },
+        // Triggered when user closes the player
+        destroy: (art) => {
+            fetch('/api/pause-torrent', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ infoHash: currentHash }) 
+            });
+        }
+    }
+          
     });
 
     if (options.startPaused) {
