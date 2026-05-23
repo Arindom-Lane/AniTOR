@@ -178,12 +178,11 @@ select, button, input {
   color: var(--text);
   font-size: 0.9rem;
   outline: none;
-}
-
-.header-controls select {
+  font-weight: 600;
   appearance: none;
   text-align: center;
 }
+
 
 input[type="text"] { width: 100%; }
 input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(138,43,226,0.12); }
@@ -315,4 +314,18 @@ footer {
   .input-wrapper { flex-direction: column; gap: 8px; }
   .header-controls { gap: 8px; }
   .meta-details h3 { font-size: 0.95rem; }
+}
+footer .btn-secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  text-decoration: none;
+}
+footer .btn-secondary:visited  {
+  text-decoration: none;
 }
