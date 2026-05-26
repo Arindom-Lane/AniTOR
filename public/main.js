@@ -1,326 +1,298 @@
+// =====================================================
+// DOM ELEMENTS
+// =====================================================
+
 const startBtn = document.getElementById('startBtn');
 const magnetInput = document.getElementById('magnetInput');
 const videoUI = document.getElementById('videoUI');
 const videoTitle = document.getElementById('videoTitle');
 const verifiedBadge = document.getElementById('verifiedBadge');
-const statsArea = document.getElementById('statsArea');
-const themeSelect = document.getElementById('themeSelect');
 const vlcBtn = document.getElementById('vlcBtn');
+const themeSelect = document.getElementById('themeSelect');
+const statsArea = document.getElementById('statsArea');
+const historyBtn = document.getElementById('historyBtn');
+const historyList = document.getElementById('historyList');
 
-const historyMenuBtn = document.getElementById('historyMenuBtn');
-const localMenuBtn = document.getElementById('localMenuBtn');
-const historyModal = document.getElementById('historyModal');
-const localModal = document.getElementById('localModal');
-const historyListContainer = document.getElementById('historyListContainer');
-const localListContainer = document.getElementById('localListContainer');
-
+let art = null;
 let statsInterval = null;
-let artInstance = null;
-let idleTimer = null;
-const IDLE_TIMEOUT_MS = 6000;
 
-function resetIdleTimer() {
-  document.body.classList.remove('cinematic-dim');
-  clearTimeout(idleTimer);
-  if (artInstance && artInstance.playing) {
-    idleTimer = setTimeout(() => { document.body.classList.add('cinematic-dim'); }, IDLE_TIMEOUT_MS);
-  }
+
+// =====================================================
+// THEME FUNCTIONS
+// =====================================================
+
+/*
+INPUT:
+  theme name string
+
+OUTPUT:
+  saves selected theme
+*/
+function saveTheme(theme) {
+  localStorage.setItem('theme', theme);
 }
 
-['mousemove', 'mousedown', 'keydown', 'touchstart'].forEach(evName => {
-  window.addEventListener(evName, resetIdleTimer, { passive: true });
+/*
+INPUT:
+  none
+
+OUTPUT:
+  loads saved theme
+*/
+function loadTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+
+  document.documentElement.setAttribute('data-theme', saved);
+  themeSelect.value = saved;
+}
+
+
+themeSelect.addEventListener('change', () => {
+  const theme = themeSelect.value;
+
+  document.documentElement.setAttribute('data-theme', theme);
+
+  saveTheme(theme);
 });
 
 
+// =====================================================
+// PLAYER FUNCTIONS
+// =====================================================
 
-function setCookie(name, value, days = 30) {
-  const expires = new Date(Date.now() + days * 864e5).toUTCString();
-  document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Expires=${expires}; Path=/; SameSite=Lax`;
-}
+/*
+INPUT:
+  none
 
-function getCookie(name) {
-  const cookies = document.cookie.split('; ');
-  for (const c of cookies) {
-    const [k, v] = c.split('=');
-    if (decodeURIComponent(k) === name) return decodeURIComponent(v || '');
+OUTPUT:
+  destroys old player safely
+*/
+function destroyPlayer() {
+  if (art) {
+    art.destroy(true);
+    art = null;
   }
-  return null;
 }
 
 
-function deleteCookie(name) {
-  document.cookie = `${encodeURIComponent(name)}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/`;
-}
+/*
+INPUT:
+  none
 
-document.addEventListener('DOMContentLoaded', () => {
-  const savedTheme = getCookie('selectedTheme') ;
-  if (savedTheme) {
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    themeSelect.value = savedTheme;
-    themeSelect.innerHTML=`
-      <option value="dark" ${savedTheme === 'dark' ? 'selected' : ''}>Dark Theme</option>
-      <option value="cyan" ${savedTheme === 'cyan' ? 'selected' : ''}>Dark Cyan</option>
-      <option value="light" ${savedTheme === 'light' ? 'selected' : ''}>Off-White</option>
-      <option value="atom-material" ${savedTheme === 'atom-material' ? 'selected' : ''}>Atom Material</option>
-      <option value="default" ${savedTheme === 'default' ? 'selected' : ''}>Default</option>
-      <option value="github-dark" ${savedTheme === 'github-dark' ? 'selected' : ''}>GitHub Dark</option>
-      <option value="hopscotch" ${savedTheme === 'hopscotch' ? 'selected' : ''}>Hopscotch</option>
-      <option value="monokai" ${savedTheme === 'monokai' ? 'selected' : ''}>Monokai</option>
-      <option value="okaidia" ${savedTheme === 'okaidia' ? 'selected' : ''}>Okaidia</option>
-      <option value="one-dark" ${savedTheme === 'one-dark' ? 'selected' : ''}>One Dark</option>
-      <option value="pojoaque" ${savedTheme === 'pojoaque' ? 'selected' : ''}>Pojoaque</option>
-      <option value="solarized-dark" ${savedTheme === 'solarized-dark' ? 'selected' : ''}>Solarized Dark</option>
-      <option value="twilight" ${savedTheme === 'twilight' ? 'selected' : ''}>Twilight</option>
-      <option value="xonokai" ${savedTheme === 'xonokai' ? 'selected' : ''}>Xonokai</option>
-    `;
-  }});
+OUTPUT:
+  creates ArtPlayer instance
+*/
+function createPlayer() {
 
-  themeSelect.addEventListener('change', (e) => {
-    document.documentElement.setAttribute('data-theme', e.target.value);
-    setCookie('selectedTheme', e.target.value, 30);
+  destroyPlayer();
+
+  art = new Artplayer({
+    container: '#artContainer',
+    url: '/api/video-stream',
+    autoplay: true,
+    pip: true,
+    fullscreen: true,
+    playbackRate: true,
+    setting: true,
+    aspectRatio: true
   });
-
-
-async function verifyAnimeTitleOnline(rawFileName) {
-  try {
-    let cleanStr = rawFileName.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
-    cleanStr = cleanStr.replace(/\s+-\s+\d+.*/, '').replace(/\.(mkv|mp4|webm)$/i, '').trim();
-    if (!cleanStr) return rawFileName;
-
-    const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(cleanStr)}&limit=1`);
-    if (!res.ok) return cleanStr;
-    const json = await res.json();
-    if (json.data && json.data.length > 0) return json.data[0].title;
-    return cleanStr;
-  } catch (err) {
-    return rawFileName;
-  }
 }
 
-async function runStreamPipeline(targetLink, options = {}) {
-  startBtn.innerText = "Analyzing Tracking Swarm...";
+
+// =====================================================
+// STREAM FUNCTIONS
+// =====================================================
+
+/*
+INPUT:
+  magnet link
+
+OUTPUT:
+  starts streaming
+*/
+async function startStream(magnetLink) {
+
   startBtn.disabled = true;
+  startBtn.innerText = 'Loading...';
 
   try {
+
     const response = await fetch('/api/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ magnetLink: targetLink })
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ magnetLink })
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || 'Server failure handling tracking hash payload.');
+      throw new Error(await response.text());
     }
 
     const data = await response.json();
 
     videoUI.style.display = 'block';
+
     videoTitle.innerText = data.title;
-    verifiedBadge.innerText = "🔍 Syncing with global media indexes...";
+    verifiedBadge.innerText = 'Streaming active';
 
-    const checkedTitle = await verifyAnimeTitleOnline(data.title);
-    verifiedBadge.innerText = `✅ Verified Title Match: "${checkedTitle}"`;
+    createPlayer();
 
-    vlcBtn.onclick = async () => {
-      try { 
-        // 1. Tell the Artplayer instance to pause the web video
-        if (artInstance && artInstance.playing) {
-          artInstance.pause();
-        }
-        
-        // 2. Fire the signal to the backend to launch VLC
-        await fetch('/api/open-vlc', { method: 'POST' }); 
-      } catch (e) {
-        console.error("Failed to launch VLC:", e);
-      }
-    };
+    startStatsUpdater();
 
-    if (artInstance) artInstance.destroy(false);
+  } catch (error) {
 
-    artInstance = new Artplayer({
-      container: '#artContainer',
-      url: data.streamUrl,
-      autoplay: options.startPaused ? false : true,
-      pip: true,
-      fullscreen: true,
-      setting: true,
-      playbackRate: true,
-      aspectRatio: true,
+    alert(error.message);
 
-      events: {
-        // Triggered when user clicks pause
-        pause: (art) => {
-            fetch('/api/pause-torrent', { 
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ infoHash: currentHash }) 
-            });
-        },
-        // Triggered when user closes the player
-        destroy: (art) => {
-            fetch('/api/pause-torrent', { 
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ infoHash: currentHash }) 
-            });
-        }
-    }
-          
-    });
+  } finally {
 
-    if (options.startPaused) {
-      artInstance.on('ready', () => { artInstance.pause(); });
-    }
-
-    artInstance.on('video:play', resetIdleTimer);
-    artInstance.on('video:pause', () => {
-      clearTimeout(idleTimer);
-      document.body.classList.remove('cinematic-dim');
-    });
-
-    statsArea.style.display = 'flex';
-    if (statsInterval) clearInterval(statsInterval);
-    statsInterval = setInterval(fetchTelemetryData, 1000);
-
-    startBtn.innerText = "Initialize Stream";
     startBtn.disabled = false;
-
-  } catch (err) {
-    alert(err.message || 'Error occurred initializing stream data engine.');
-    startBtn.innerText = "Initialize Stream";
-    startBtn.disabled = false;
+    startBtn.innerText = 'Start Stream';
   }
 }
+
+
+// =====================================================
+// STATS FUNCTIONS
+// =====================================================
+
+/*
+INPUT:
+  none
+
+OUTPUT:
+  updates download stats every second
+*/
+function startStatsUpdater() {
+
+  statsArea.style.display = 'flex';
+
+  clearInterval(statsInterval);
+
+  statsInterval = setInterval(loadStats, 1000);
+}
+
+
+/*
+INPUT:
+  none
+
+OUTPUT:
+  fetches current torrent stats
+*/
+async function loadStats() {
+
+  try {
+
+    const response = await fetch('/api/stats');
+    const data = await response.json();
+
+    if (!data.active) return;
+
+    document.getElementById('speedVal').innerText = `${data.downloadSpeed} MB/s`;
+    document.getElementById('peersVal').innerText = data.peers;
+    document.getElementById('progressVal').innerText = `${data.progress}%`;
+
+  } catch {}
+}
+
+
+// =====================================================
+// HISTORY FUNCTIONS
+// =====================================================
+
+/*
+INPUT:
+  none
+
+OUTPUT:
+  opens history modal
+*/
+async function loadHistory() {
+
+  document.getElementById('historyModal').style.display = 'flex';
+
+  historyList.innerHTML = 'Loading history...';
+
+  try {
+
+    const response = await fetch('/api/history');
+    const list = await response.json();
+
+    if (list.length === 0) {
+      historyList.innerHTML = 'No history found';
+      return;
+    }
+
+    historyList.innerHTML = '';
+
+    list.forEach(item => {
+
+      const div = document.createElement('div');
+
+      div.className = 'list-item';
+
+      div.innerHTML = `
+        <div class="list-item-info">
+          <div class="list-item-title">${item.title}</div>
+          <div class="list-item-meta">${item.progress}% downloaded</div>
+        </div>
+
+        <button class="btn-load-item">Stream</button>
+      `;
+
+      div.querySelector('button').onclick = () => {
+        closeModal();
+        magnetInput.value = item.magnetLink;
+        startStream(item.magnetLink);
+      };
+
+      historyList.appendChild(div);
+    });
+
+  } catch {
+
+    historyList.innerHTML = 'Failed to load history';
+  }
+}
+
+
+// =====================================================
+// VLC BUTTON
+// =====================================================
+
+vlcBtn.addEventListener('click', async () => {
+
+  try {
+    await fetch('/api/open-vlc', {
+      method: 'POST'
+    });
+  } catch (error) {
+    console.error(error);
+  }
+});
+
+
+// =====================================================
+// BUTTON EVENTS
+// =====================================================
 
 startBtn.addEventListener('click', () => {
-  const link = magnetInput.value.trim();
-  if (link) runStreamPipeline(link);
+
+  const magnet = magnetInput.value.trim();
+
+  if (!magnet) {
+    return alert('Paste magnet link');
+  }
+
+  startStream(magnet);
 });
 
-async function fetchTelemetryData() {
-  try {
-    const res = await fetch('/api/stats');
-    if (!res.ok) return;
-    const data = await res.json();
-    
-    if (data.active) {
-      document.getElementById('progressVal').innerText = `${data.progress}%`;
-      document.getElementById('peersVal').innerText = data.peers;
-      document.getElementById('speedVal').innerText = `${data.downloadSpeed} MB/s`;
-      document.getElementById('speedVal').style.color = "var(--accent)";
-    }
-  } catch (e) {}
-}
+historyBtn.addEventListener('click', loadHistory);
 
-historyMenuBtn.addEventListener('click', async () => {
-  historyModal.style.display = 'flex';
-  historyListContainer.innerHTML = '<div>Reading session logs...</div>';
-  
-  try {
-    const res = await fetch('/api/history');
-    const list = await res.json();
-    
-    if (list.length === 0) {
-      historyListContainer.innerHTML = '<div style="opacity:0.5;text-align:center;">No history records found.</div>';
-      return;
-    }
 
-    historyListContainer.innerHTML = '';
-    list.forEach(item => {
-      const el = document.createElement('div');
-      el.className = 'list-item';
-      el.innerHTML = `
-        <div class="list-item-info">
-          <div class="list-item-title" title="${item.title}">${item.title}</div>
-          <div class="list-item-meta">Hash block: ${item.infoHash.substring(0,12)}...</div>
-        </div>
-        <button class="btn-play" style="padding:6px 12px; font-size:0.8rem;">Stream</button>
-      `;
-      el.querySelector('.btn-play').onclick = () => {
-        historyModal.style.display = 'none';
-        magnetInput.value = item.magnetLink;
-        runStreamPipeline(item.magnetLink); 
-      };
-      historyListContainer.appendChild(el);
-    });
-  } catch (e) {
-    historyListContainer.innerHTML = '<div>Failed parsing historical log registers.</div>';
-  }
-});
+// =====================================================
+// INITIAL LOAD
+// =====================================================
 
-localMenuBtn.addEventListener('click', loadLocalCacheMenu);
-
-async function loadLocalCacheMenu() {
-  localModal.style.display = 'flex';
-  localListContainer.innerHTML = '<div>Querying storage charts...</div>';
-  
-  try {
-    const res = await fetch('/api/cached-files');
-    const list = await res.json();
-    
-    if (list.length === 0) {
-      localListContainer.innerHTML = '<div style="opacity:0.5;text-align:center;">No records available inside disk indices.</div>';
-      return;
-    }
-
-    localListContainer.innerHTML = '';
-    list.forEach(item => {
-      const el = document.createElement('div');
-      el.className = 'list-item';
-      
-      const completedState = (parseFloat(item.progress) >= 100.0);
-      const metricColor = completedState ? 'color:#00ff88;' : 'color:var(--accent);';
-      
-      el.innerHTML = `
-        <div class="list-item-info">
-          <div class="list-item-title" title="${item.title}">${item.title}</div>
-          <div class="list-item-meta">Storage allocation: <strong style="${metricColor}">${item.progress}%</strong></div>
-        </div>
-        <div style="display:flex; gap:8px;">
-          <button class="btn-load-item" style="padding:6px 12px; font-size:0.8rem;">Run</button>
-          <button class="btn-del-item" style="padding:6px 12px; font-size:0.8rem; background:#ff3333;">Delete</button>
-        </div>
-      `;
-
-      el.querySelector('.btn-load-item').onclick = async () => {
-        localModal.style.display = 'none';
-        
-        if (completedState) {
-          await fetch('/api/open-vlc-local', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ infoHash: item.infoHash })
-          });
-        } else {
-          magnetInput.value = item.magnetLink;
-          
-          await runStreamPipeline(item.magnetLink, { startPaused: true });
-          
-          await fetch('/api/open-vlc', { method: 'POST' });
-          
-          await fetch('/api/force-full-download', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ infoHash: item.infoHash })
-          });
-        }
-      };
-
-      el.querySelector('.btn-del-item').onclick = async () => {
-        if (confirm(`Confirm physical disk deletion of item cache directory:\n"${item.title}"?`)) {
-          await fetch('/api/delete-cache', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ infoHash: item.infoHash })
-          });
-          loadLocalCacheMenu();
-        }
-      };
-
-      localListContainer.appendChild(el);
-    });
-  } catch (e) {
-    localListContainer.innerHTML = '<div>System failure listing local filesystem indices.</div>';
-  }
-}
+loadTheme();

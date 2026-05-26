@@ -1,88 +1,224 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AniTOR - Torrent Streamer</title>
 
-  <link rel="stylesheet" href="style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+<head>
+    <meta charset="UTF-8" />
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    />
+
+    <title>AniTOR</title>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- ArtPlayer -->
+    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
 </head>
+
 <body>
 
-  <header>
-    <strong>AniTOR</strong>
+    <!-- ================================================= -->
+    <!-- HEADER -->
+    <!-- ================================================= -->
 
-    <div class="header-controls">
-      <button id="historyMenuBtn" class="btn-secondary">History</button>
-      <button id="localMenuBtn" class="btn-secondary">Play Local</button>
-      <select id="themeSelect">
-        
-      </select>
-    </div>
-  </header>
+    <header>
 
-  <main>
-    <div class="input-wrapper">
-      <input type="text" id="magnetInput" placeholder="Insert streaming magnet token query sequence or raw video address file link..." />
-      <button id="startBtn">Initialize Stream</button>
-    </div>
+        <strong>AniTOR</strong>
 
-    <div id="videoUI" style="display: none;">
-      <div class="viewport-box">
-        <div id="artContainer" class="artplayer-app"></div>
-      </div>
+        <div class="header-controls">
 
-      <div class="status-panel">
-        <div class="meta-details">
-          <h3 id="videoTitle">Processing Media Metadata Reference Pointer...</h3>
-          <p id="verifiedBadge">🔍 Title Verification Pending...</p>
+            <button
+                id="historyBtn"
+                class="btn-secondary"
+            >
+                History
+            </button>
+
+            <select id="themeSelect">
+
+                <option value="dark">Dark</option>
+                <option value="cyan">Cyan</option>
+                <option value="light">Light</option>
+                <option value="atom-material">Atom Material</option>
+                <option value="default">Default</option>
+                <option value="github-dark">GitHub Dark</option>
+                <option value="hopscotch">Hopscotch</option>
+                <option value="monokai">Monokai</option>
+                <option value="okaidia">Okaidia</option>
+                <option value="one-dark">One Dark</option>
+                <option value="pojoaque">Pojoaque</option>
+                <option value="solarized-dark">Solarized Dark</option>
+                <option value="twilight">Twilight</option>
+                <option value="xonokai">Xonokai</option>
+
+            </select>
+
         </div>
-        <div style="flex: 1;"></div>
-        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
-          <div>To select subtitle and dual audio tracks</div>
-          <button id="vlcBtn">Stream Locally</button>
+
+    </header>
+
+
+    <!-- ================================================= -->
+    <!-- MAIN -->
+    <!-- ================================================= -->
+
+    <main>
+
+        <!-- INPUT -->
+
+        <div class="input-wrapper">
+
+            <input
+                type="text"
+                id="magnetInput"
+                placeholder="Paste magnet link..."
+            />
+
+            <button id="startBtn">
+                Start Stream
+            </button>
+
         </div>
-      </div>
+
+
+        <!-- VIDEO -->
+
+        <div
+            id="videoUI"
+            style="display: none;"
+        >
+
+            <div class="viewport-box">
+
+                <div
+                    id="artContainer"
+                    class="artplayer-app"
+                ></div>
+
+            </div>
+
+
+            <!-- STATUS -->
+
+            <div class="status-panel">
+
+                <div class="meta-details">
+
+                    <h3 id="videoTitle">
+                        Waiting...
+                    </h3>
+
+                    <p id="verifiedBadge">
+                        Ready
+                    </p>
+
+                </div>
+
+                <button id="vlcBtn">
+                    Stream Locally
+                </button>
+
+            </div>
+
+        </div>
+
+    </main>
+
+
+    <!-- ================================================= -->
+    <!-- HISTORY MODAL -->
+    <!-- ================================================= -->
+
+    <div
+        id="historyModal"
+        class="modal-overlay"
+    >
+
+        <div class="modal-card">
+
+            <div class="modal-header">
+
+                <h2>History</h2>
+
+                <button
+                    class="btn-secondary"
+                    onclick="closeModal()"
+                >
+                    ✕
+                </button>
+
+            </div>
+
+            <div
+                id="historyList"
+                class="modal-body"
+            ></div>
+
+        </div>
+
     </div>
-  </main>
 
-  <div id="historyModal" class="modal-overlay">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h2>Streaming Session Tracking Logs</h2>
-        <button onclick="closeModal('historyModal')" class="btn-secondary" style="padding: 6px 12px;">✕</button>
-      </div>
-      <div id="historyListContainer" class="modal-body"></div>
-    </div>
-  </div>
 
-  <div id="localModal" class="modal-overlay">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h2>Local Cache Index Allocations</h2>
-        <button onclick="closeModal('localModal')" class="btn-secondary" style="padding: 6px 12px;">✕</button>
-      </div>
-      <div id="localListContainer" class="modal-body"></div>
-    </div>
-  </div>
+    <!-- ================================================= -->
+    <!-- FOOTER -->
+    <!-- ================================================= -->
 
-  <footer>
-    <div class="telemetry-metrics" id="statsArea" style="display: none;">
-      <span>📥 Speed: <strong id="speedVal" style="color: var(--accent);">0.0 MB/s</strong></span>
-      <span>👥 Peers: <strong id="peersVal">0</strong></span>
-      <span>📦 Cache Status: <strong id="progressVal">0%</strong></span>
-    </div>
+    <footer>
 
-    <a href="https://github.com/Arindom-Lane/AniTOR" target="_blank" class="btn-secondary">
-    <a href="https://github.com/Arindom-Lane/AniTOR" target="_blank" class="btn-secondary">
-      GitHub
-    </a>
-  </footer>
+        <div
+            id="statsArea"
+            class="telemetry-metrics"
+            style="display: none;"
+        >
 
-  <script src="main.js"></script>
-  <script>
-    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-  </script>
+            <span>
+                Speed:
+                <strong id="speedVal">0 MB/s</strong>
+            </span>
+
+            <span>
+                Peers:
+                <strong id="peersVal">0</strong>
+            </span>
+
+            <span>
+                Progress:
+                <strong id="progressVal">0%</strong>
+            </span>
+
+        </div>
+
+
+        <a
+            href="https://github.com/Arindom-Lane/AniTOR"
+            target="_blank"
+            class="btn-secondary"
+        >
+            GitHub
+        </a>
+
+    </footer>
+
+
+    <!-- ================================================= -->
+    <!-- JS -->
+    <!-- ================================================= -->
+
+    <script src="./main.js"></script>
+
+    <script>
+
+        function closeModal() {
+
+            document.getElementById(
+                'historyModal'
+            ).style.display = 'none';
+        }
+
+    </script>
+
 </body>
 </html>

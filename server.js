@@ -1,279 +1,437 @@
 import express from 'express';
 import WebTorrent from 'webtorrent';
-import { fileURLToPath } from 'url';
-import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { exec } from 'child_process';
+import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
-const CACHE_DIR = path.join(__dirname, 'temp_cache');
-const REGISTRY_FILE = path.join(__dirname, 'aniTOR_registry.json');
-
-// --- SETUP ---
-app.use(express.json());
-if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
-if (!fs.existsSync(REGISTRY_FILE)) fs.writeFileSync(REGISTRY_FILE, JSON.stringify({ history: [] }, null, 2), 'utf8');
-
 const client = new WebTorrent();
-let activeTorrentReference = null;
 
-// --- DATABASE HELPERS ---
-function getRegistry() {
-  try { return JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf8')); } catch (e) { return { history: [] }; }
-}
+const PORT = 3000;
 
-function writeRegistry(data) {
-  try { fs.writeFileSync(REGISTRY_FILE, JSON.stringify(data, null, 2), 'utf8'); } catch (e) {}
-}
+const CACHE_DIR = path.join(__dirname, 'temp_cache');
+const HISTORY_FILE = path.join(__dirname, 'history.json');
 
-function updateRegistryItem(infoHash, updates) {
-  const db = getRegistry();
-  const idx = db.history.findIndex(item => item.infoHash.toLowerCase() === infoHash.toLowerCase());
-  if (idx !== -1) {
-    db.history[idx] = { ...db.history[idx], ...updates };
-    writeRegistry(db);
-  }
-}
-
-// --- HELPER FUNCTIONS ---
-function getHashFromMagnet(magnet) {
-  if (!magnet) return null;
-  const clean = magnet.trim(); 
-  if (/^[a-fA-F0-9]{40}$/.test(clean)) return clean.toLowerCase();
-  const match = clean.match(/urn:btih:([a-zA-Z0-9]+)/i);
-  return match ? match[1].toLowerCase() : null;
-}
-
-function findVideoFile(torrent) {
-  if (!torrent || !torrent.files) return null;
-  return torrent.files.find(file => file.name.match(/\.(mp4|mkv|webm|avi|mov|flv)$/i));
-}
-
-// --- API ROUTES ---
-
-app.post('/api/stream', (req, res) => {
-  const { magnetLink } = req.body;
-  const infoHash = getHashFromMagnet(magnetLink);
-  
-  if (!infoHash) return res.status(400).json({ error: 'Invalid magnet link' });
-
-  console.log(`📥 Requesting stream engine: ${infoHash}`);
-
-  let isResponded = false;
-  const safeRespond = (statusCode, payload) => {
-    if (!isResponded) {
-      isResponded = true;
-      res.status(statusCode).json(payload);
-    }
-  };
-
-  const timeout = setTimeout(() => {
-    if (!isResponded) {
-      console.log(`⚠️ [Timeout]: No active seeders found for infoHash: ${infoHash}`);
-      safeRespond(504, { error: 'Timed out waiting for metadata.' });
-      
-      const deadTorrent = client.torrents.find(t => t.infoHash.toLowerCase() === infoHash.toLowerCase());
-      if (deadTorrent) {
-        try { client.remove(deadTorrent.infoHash); } catch(e) {}
-      }
-    }
-  }, 20000);
-
-  const handleReadyTorrent = (torrent) => {
-    clearTimeout(timeout);
-    
-    const file = findVideoFile(torrent);
-    if (!file) return safeRespond(404, { error: 'No video file found in torrent' });
-    
-    activeTorrentReference = torrent;
-
-    const db = getRegistry();
-    const exists = db.history.find(h => h.infoHash.toLowerCase() === infoHash);
-    if (!exists) {
-      db.history.unshift({
-        infoHash: infoHash,
-        magnetLink: magnetLink,
-        title: file.name,
-        relativeSavePath: file.path,
-        progress: '0.0'
-      });
-      writeRegistry(db);
-    }
-
-    if (torrent && typeof torrent.on === 'function') {
-      torrent.on('download', () => {
-        updateRegistryItem(infoHash, { progress: (torrent.progress * 100).toFixed(1) });
-      });
-    }
-
-    safeRespond(200, {
-      streamUrl: `http://localhost:${PORT}/api/video-stream`,
-      title: file.name,
-      infoHash: infoHash
-    });
-  };
-
-  try {
-    const existingTorrent = client.torrents.find(t => t.infoHash.toLowerCase() === infoHash.toLowerCase());
-
-    if (existingTorrent) {
-      if (existingTorrent.ready) {
-        handleReadyTorrent(existingTorrent);
-      } else {
-        const checkReadyInterval = setInterval(() => {
-          if (existingTorrent.ready) {
-            clearInterval(checkReadyInterval);
-            handleReadyTorrent(existingTorrent);
-          }
-        }, 200);
-        setTimeout(() => clearInterval(checkReadyInterval), 20000);
-      }
-    } else {
-      client.add(magnetLink, { path: CACHE_DIR }, (newTorrent) => {
-        handleReadyTorrent(newTorrent);
-      });
-    }
-  } catch (err) {
-    console.error("Initialization Error:", err);
-    clearTimeout(timeout);
-    safeRespond(500, { error: err.message });
-  }
-});
-
-// Dummy endpoints added to safely absorb frontend button clicks without causing 404s
-app.post('/api/pause', (req, res) => res.json({ success: true, status: 'ignored' }));
-app.post('/api/resume', (req, res) => res.json({ success: true, status: 'ignored' }));
-
-// --- CRASH-PROOF STREAM PIPELINE ---
-app.get('/api/video-stream', (req, res) => {
-  if (!activeTorrentReference) return res.status(400).send('No active torrent');
-  
-  const file = findVideoFile(activeTorrentReference);
-  if (!file) return res.status(404).send('No file');
-
-  const range = req.headers.range;
-  const size = file.length;
-  
-  let mimeType = 'video/mp4';
-  if (file.name.endsWith('.mkv')) mimeType = 'video/x-matroska';
-  else if (file.name.endsWith('.webm')) mimeType = 'video/webm';
-  else if (file.name.endsWith('.avi')) mimeType = 'video/x-msvideo';
-
-  if (range) {
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : size - 1;
-    
-    res.writeHead(206, { 
-      'Content-Range': `bytes ${start}-${end}/${size}`, 
-      'Accept-Ranges': 'bytes', 
-      'Content-Length': (end - start) + 1, 
-      'Content-Type': mimeType 
-    });
-
-    const stream = file.createReadStream({ start, end });
-    
-    stream.on('error', (err) => {
-      console.log(`📡 Stream safely closed/shifted (Info: ${err.message})`);
-    });
-
-    res.on('close', () => stream.destroy());
-    stream.pipe(res);
-  } else {
-    res.writeHead(200, { 'Content-Length': size, 'Content-Type': mimeType });
-    const stream = file.createReadStream();
-    
-    stream.on('error', (err) => {
-      console.log(`📡 Stream safely closed/shifted (Info: ${err.message})`);
-    });
-
-    res.on('close', () => stream.destroy());
-    stream.pipe(res);
-  }
-});
-
-// --- CACHE & VLC CONTROL INTERFACES ---
-app.post('/api/force-full-download', (req, res) => {
-  const { infoHash } = req.body;
-  const targetTorrent = client.torrents.find(t => t.infoHash.toLowerCase() === infoHash.toLowerCase());
-  if (targetTorrent) targetTorrent.select(0, targetTorrent.pieces.length - 1, 1);
-  res.sendStatus(200);
-});
-
-app.post('/api/open-vlc', (req, res) => {
-  if (!activeTorrentReference) return res.status(400).send('No context.');
-  exec(`start vlc "http://localhost:${PORT}/api/video-stream"`);
-  res.sendStatus(200);
-});
-
-app.post('/api/open-vlc-local', (req, res) => {
-  const { infoHash } = req.body;
-  const record = getRegistry().history.find(h => h.infoHash.toLowerCase() === infoHash.toLowerCase());
-  if (!record) return res.status(404).send('Record not found.');
-  exec(`start vlc "${path.join(CACHE_DIR, record.relativeSavePath)}"`);
-  res.sendStatus(200);
-});
-
-app.get('/api/history', (req, res) => res.json(getRegistry().history));
-app.get('/api/cached-files', (req, res) => res.json(getRegistry().history));
-
-app.post('/api/delete-cache', (req, res) => {
-  const { infoHash } = req.body;
-  const db = getRegistry();
-  const idx = db.history.findIndex(h => h.infoHash.toLowerCase() === infoHash.toLowerCase());
-  if (idx === -1) return res.status(404).send('Not found.');
-
-  const recordItem = db.history[idx];
-  try { client.remove(infoHash); } catch(e) {}
-  
-  const folderRoot = recordItem.relativeSavePath.split(path.sep)[0];
-  const absolutePath = path.join(CACHE_DIR, folderRoot);
-  if (fs.existsSync(absolutePath)) fs.rmSync(absolutePath, { recursive: true, force: true });
-
-  db.history.splice(idx, 1);
-  writeRegistry(db);
-  res.json({ success: true });
-});
-
-app.get('/api/stats', (req, res) => {
-  if (!activeTorrentReference) return res.json({ active: false });
-  res.json({
-    active: true,
-    progress: (activeTorrentReference.progress * 100).toFixed(1),
-    downloadSpeed: (activeTorrentReference.downloadSpeed / 1024 / 1024).toFixed(2),
-    peers: activeTorrentReference.numPeers,
-    status: 'downloading'
-  });
-});
-
-// Serve frontend assets last
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.listen(PORT, () => {
-  console.log(`AniTOR Server running at: http://localhost:${PORT}`);
-  
-  // Automatically open the user's default web browser
-  const platform = process.platform;
-  const startCmd = platform === 'win32' ? 'start' : platform === 'darwin' ? 'open' : 'xdg-open';
-  
-  exec(`${startCmd} http://localhost:${PORT}`, (err) => {
-    if (err) console.log('Ready! Please open http://localhost:3000 in your browser.');
-  });
+
+// =====================================================
+// CREATE CACHE + HISTORY
+// =====================================================
+
+if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR);
+}
+
+if (!fs.existsSync(HISTORY_FILE)) {
+    fs.writeFileSync(
+        HISTORY_FILE,
+        JSON.stringify([])
+    );
+}
+
+
+// =====================================================
+// GLOBAL VARIABLES
+// =====================================================
+
+let currentTorrent = null;
+let currentStream = null;
+
+
+// =====================================================
+// READ HISTORY
+// =====================================================
+
+function readHistory() {
+
+    const raw = fs.readFileSync(
+        HISTORY_FILE,
+        'utf8'
+    );
+
+    return JSON.parse(raw);
+}
+
+
+// =====================================================
+// SAVE HISTORY
+// =====================================================
+
+function saveHistory(title, magnet, hash) {
+
+    const history = readHistory();
+
+    history.unshift({
+        title: title,
+        magnetLink: magnet,
+        infoHash: hash,
+        progress: '0.0'
+    });
+
+    fs.writeFileSync(
+        HISTORY_FILE,
+        JSON.stringify(history, null, 2)
+    );
+}
+
+
+// =====================================================
+// UPDATE DOWNLOAD PROGRESS
+// =====================================================
+
+function updateProgress(hash, progress) {
+
+    const history = readHistory();
+
+    for (let i = 0; i < history.length; i++) {
+
+        if (history[i].infoHash === hash) {
+
+            history[i].progress = progress;
+        }
+    }
+
+    fs.writeFileSync(
+        HISTORY_FILE,
+        JSON.stringify(history, null, 2)
+    );
+}
+
+
+// =====================================================
+// FIND VIDEO FILE
+// =====================================================
+
+function getVideoFile(torrent) {
+
+    for (let i = 0; i < torrent.files.length; i++) {
+
+        const file = torrent.files[i];
+
+        if (
+            file.name.endsWith('.mp4') ||
+            file.name.endsWith('.mkv') ||
+            file.name.endsWith('.webm') ||
+            file.name.endsWith('.avi')
+        ) {
+            return file;
+        }
+    }
+
+    return null;
+}
+
+
+// =====================================================
+// DELETE OLD TORRENT
+// =====================================================
+
+async function deleteOldTorrent() {
+
+    if (currentTorrent == null) {
+        return;
+    }
+
+    return new Promise(resolve => {
+
+        const folder = path.join(
+            CACHE_DIR,
+            currentTorrent.path || ''
+        );
+
+        if (currentStream) {
+
+            try {
+                currentStream.destroy();
+            } catch {}
+        }
+
+        client.remove(
+            currentTorrent.infoHash,
+            { destroyStore: true },
+
+            () => {
+
+                try {
+
+                    fs.rmSync(folder, {
+                        recursive: true,
+                        force: true
+                    });
+
+                } catch {}
+
+                currentTorrent = null;
+                currentStream = null;
+
+                resolve();
+            }
+        );
+    });
+}
+
+
+// =====================================================
+// START STREAM
+// =====================================================
+
+app.post('/api/stream', async (req, res) => {
+
+    const magnetLink = req.body.magnetLink;
+
+    if (!magnetLink) {
+
+        return res
+            .status(400)
+            .send('No magnet link');
+    }
+
+
+    // DELETE OLD STREAM
+
+    await deleteOldTorrent();
+
+
+    // START NEW STREAM
+
+    client.add(
+        magnetLink,
+        { path: CACHE_DIR },
+
+        torrent => {
+
+            currentTorrent = torrent;
+
+            const video = getVideoFile(torrent);
+
+            if (!video) {
+
+                return res
+                    .status(404)
+                    .send('No video file');
+            }
+
+
+            // SAVE HISTORY
+
+            saveHistory(
+                video.name,
+                magnetLink,
+                torrent.infoHash
+            );
+
+
+            // UPDATE DOWNLOAD %
+
+            torrent.on('download', () => {
+
+                const percent =
+                    (
+                        torrent.progress * 100
+                    ).toFixed(1);
+
+                updateProgress(
+                    torrent.infoHash,
+                    percent
+                );
+            });
+
+
+            res.json({
+                title: video.name,
+                infoHash: torrent.infoHash
+            });
+        }
+    );
 });
 
-app.post('/api/pause-torrent', (req, res) => {
-    const { infoHash } = req.body;
-    const torrent = client.get(infoHash); // 'client' is your WebTorrent instance
 
-    if (torrent) {
-        torrent.pause(); // This is the built-in WebTorrent function to halt downloading
-        console.log(`Torrent ${infoHash} has been paused.`);
-        res.status(200).send({ status: 'paused' });
-    } else {
-        res.status(404).send({ error: 'Torrent not found' });
+// =====================================================
+// VIDEO STREAM
+// =====================================================
+
+app.get('/api/video-stream', (req, res) => {
+
+    if (!currentTorrent) {
+
+        return res
+            .status(400)
+            .send('No torrent');
     }
+
+    const file = getVideoFile(currentTorrent);
+
+    if (!file) {
+
+        return res
+            .status(404)
+            .send('No video');
+    }
+
+    const range = req.headers.range;
+
+    if (!range) {
+
+        return res
+            .status(400)
+            .send('No range');
+    }
+
+
+    // RANGE
+
+    const parts = range
+        .replace('bytes=', '')
+        .split('-');
+
+    const start = parseInt(parts[0]);
+
+    let end;
+
+    if (parts[1]) {
+        end = parseInt(parts[1]);
+    } else {
+        end = file.length - 1;
+    }
+
+    const chunkSize =
+        (end - start) + 1;
+
+
+    // MIME TYPE
+
+    let type = 'video/mp4';
+
+    if (file.name.endsWith('.mkv')) {
+        type = 'video/x-matroska';
+    }
+
+    if (file.name.endsWith('.webm')) {
+        type = 'video/webm';
+    }
+
+
+    // HEADERS
+
+    res.writeHead(206, {
+
+        'Content-Range':
+            `bytes ${start}-${end}/${file.length}`,
+
+        'Accept-Ranges': 'bytes',
+
+        'Content-Length': chunkSize,
+
+        'Content-Type': type
+    });
+
+
+    // STREAM
+
+    currentStream =
+        file.createReadStream({
+            start: start,
+            end: end
+        });
+
+    currentStream.pipe(res);
+
+
+    // CLOSE
+
+    res.on('close', () => {
+
+        try {
+            currentStream.destroy();
+        } catch {}
+    });
+});
+
+
+// =====================================================
+// OPEN VLC
+// =====================================================
+
+app.post('/api/open-vlc', (req, res) => {
+
+    exec(
+        `start vlc "http://localhost:${PORT}/api/video-stream"`
+    );
+
+    res.sendStatus(200);
+});
+
+
+// =====================================================
+// GET HISTORY
+// =====================================================
+
+app.get('/api/history', (req, res) => {
+
+    const history = readHistory();
+
+    res.json(history);
+});
+
+
+// =====================================================
+// GET STATS
+// =====================================================
+
+app.get('/api/stats', (req, res) => {
+
+    if (!currentTorrent) {
+
+        return res.json({
+            active: false
+        });
+    }
+
+    const progress =
+        (
+            currentTorrent.progress * 100
+        ).toFixed(1);
+
+    const speed =
+        (
+            currentTorrent.downloadSpeed /
+            1024 /
+            1024
+        ).toFixed(2);
+
+    const peers =
+        currentTorrent.numPeers;
+
+    res.json({
+
+        active: true,
+
+        progress: progress,
+
+        downloadSpeed: speed,
+
+        peers: peers
+    });
+});
+
+
+// =====================================================
+// START SERVER
+// =====================================================
+
+app.listen(PORT, () => {
+
+    console.log(
+        `Server running on http://localhost:${PORT}`
+    );
+
+    exec(
+        `start http://localhost:${PORT}`
+    );
 });

@@ -195,6 +195,7 @@ button {
   cursor: pointer;
 }
 button.btn-secondary {
+  
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
@@ -328,4 +329,85 @@ footer .btn-secondary {
 }
 footer .btn-secondary:visited  {
   text-decoration: none;
+}
+
+
+/* container for each row */
+.list-item {
+  display: grid;
+  grid-template-columns: 80% 20%;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  min-height: 56px;
+  width: 100%;
+  background: var(--bg, #fff);
+}
+
+/* left column: info */
+.list-item-info {
+  overflow: hidden;
+  min-width: 0; /* critical for truncation inside grid */
+}
+
+/* title with truncation */
+.list-item-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+
+/* meta line can wrap if needed */
+.list-item-meta {
+  font-size: 0.85rem;
+  color: var(--text);
+  
+}
+
+/* right column: actions */
+.list-item-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* buttons */
+.list-item-actions .btn-load-item,
+.list-item-actions .btn-del-item {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* visual styles */
+.btn-load-item { background: var(--btn-bg, #1e88e5); color: #fff; }
+.btn-del-item  { background: #ff3333; color: #fff; }
+
+/* responsive: stack actions on very small widths */
+@media (max-width: 520px) {
+  .list-item {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+    gap: 8px;
+  }
+  .list-item-actions {
+    justify-content: flex-start;
+  }
+  .list-item-actions .btn-load-item,
+  .list-item-actions .btn-del-item {
+    flex: 1 1 auto;
+  }
 }
