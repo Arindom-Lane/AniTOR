@@ -1,298 +1,382 @@
 // =====================================================
-// DOM ELEMENTS
+// DOM REFS
 // =====================================================
 
-const startBtn = document.getElementById('startBtn');
-const magnetInput = document.getElementById('magnetInput');
-const videoUI = document.getElementById('videoUI');
-const videoTitle = document.getElementById('videoTitle');
+const startBtn      = document.getElementById('startBtn');
+const magnetInput   = document.getElementById('magnetInput');
+const videoUI       = document.getElementById('videoUI');
+const videoTitle    = document.getElementById('videoTitle');
 const verifiedBadge = document.getElementById('verifiedBadge');
-const vlcBtn = document.getElementById('vlcBtn');
-const themeSelect = document.getElementById('themeSelect');
-const statsArea = document.getElementById('statsArea');
-const historyBtn = document.getElementById('historyBtn');
-const historyList = document.getElementById('historyList');
+const vlcBtn        = document.getElementById('vlcBtn');
+const themeSelect   = document.getElementById('themeSelect');
+const statsArea     = document.getElementById('statsArea');
+const historyBtn    = document.getElementById('historyBtn');
+const historyList   = document.getElementById('historyList');
+const pausedBadge   = document.getElementById('pausedBadge');
 
-let art = null;
+let art           = null;
 let statsInterval = null;
+let isUnloading   = false;   // guard: don't send pause on page unload
 
 
 // =====================================================
-// THEME FUNCTIONS
+// THEME
 // =====================================================
 
-/*
-INPUT:
-  theme name string
-
-OUTPUT:
-  saves selected theme
-*/
 function saveTheme(theme) {
-  localStorage.setItem('theme', theme);
+    localStorage.setItem('theme', theme);
 }
 
-/*
-INPUT:
-  none
-
-OUTPUT:
-  loads saved theme
-*/
 function loadTheme() {
-  const saved = localStorage.getItem('theme') || 'dark';
-
-  document.documentElement.setAttribute('data-theme', saved);
-  themeSelect.value = saved;
+    const saved = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', saved);
+    themeSelect.value = saved;
 }
-
 
 themeSelect.addEventListener('change', () => {
-  const theme = themeSelect.value;
-
-  document.documentElement.setAttribute('data-theme', theme);
-
-  saveTheme(theme);
+    const theme = themeSelect.value;
+    document.documentElement.setAttribute('data-theme', theme);
+    saveTheme(theme);
 });
 
 
 // =====================================================
-// PLAYER FUNCTIONS
+// PLAYER
 // =====================================================
 
-/*
-INPUT:
-  none
-
-OUTPUT:
-  destroys old player safely
-*/
 function destroyPlayer() {
-  if (art) {
-    art.destroy(true);
-    art = null;
-  }
+    if (art) { art.destroy(true); art = null; }
 }
 
-
-/*
-INPUT:
-  none
-
-OUTPUT:
-  creates ArtPlayer instance
-*/
 function createPlayer() {
+    destroyPlayer();
 
-  destroyPlayer();
+    art = new Artplayer({
+        container:    '#artContainer',
+        url:          '/api/video-stream',
+        autoplay:     true,
+        pip:          true,
+        fullscreen:   true,
+        playbackRate: true,
+        setting:      true,
+        aspectRatio:  true,
+    });
 
-  art = new Artplayer({
-    container: '#artContainer',
-    url: '/api/video-stream',
-    autoplay: true,
-    pip: true,
-    fullscreen: true,
-    playbackRate: true,
-    setting: true,
-    aspectRatio: true
-  });
+    // ── PAUSE ─────────────────────────────────────────
+    // FIX: was wrongly calling /api/stop-stream which
+    // destroyed the whole torrent. Now we just pause
+    // the download; torrent stays alive for resuming.
+    art.on('pause', async () => {
+        if (isUnloading) return;
+        try {
+            await fetch('/api/pause-download', { method: 'POST' });
+            if (pausedBadge) pausedBadge.style.display = 'inline';
+        } catch {}
+    });
+
+    // ── PLAY ──────────────────────────────────────────
+    art.on('play', async () => {
+        if (isUnloading) return;
+        try {
+            await fetch('/api/resume-download', { method: 'POST' });
+            if (pausedBadge) pausedBadge.style.display = 'none';
+        } catch {}
+    });
 }
 
 
 // =====================================================
-// STREAM FUNCTIONS
+// STREAM
 // =====================================================
 
-/*
-INPUT:
-  magnet link
-
-OUTPUT:
-  starts streaming
-*/
 async function startStream(magnetLink) {
+    startBtn.disabled  = true;
+    startBtn.innerText = 'Loading…';
 
-  startBtn.disabled = true;
-  startBtn.innerText = 'Loading...';
+    clearAnimePanel();
 
-  try {
+    try {
+        const res = await fetch('/api/stream', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ magnetLink }),
+        });
 
-    const response = await fetch('/api/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ magnetLink })
-    });
+        if (!res.ok) throw new Error(await res.text());
 
-    if (!response.ok) {
-      throw new Error(await response.text());
+        const data = await res.json();
+
+        videoUI.style.display   = 'block';
+        videoTitle.innerText    = data.title;
+        verifiedBadge.innerText = 'Streaming active';
+
+        createPlayer();
+        startStatsUpdater();
+
+        // Anime info is fetched separately so the player
+        // can start immediately without waiting on Jikan.
+        loadAnimeInfo(data.title);
+
+    } catch (err) {
+        alert(err.message);
+    } finally {
+        startBtn.disabled  = false;
+        startBtn.innerText = 'Start Stream';
     }
-
-    const data = await response.json();
-
-    videoUI.style.display = 'block';
-
-    videoTitle.innerText = data.title;
-    verifiedBadge.innerText = 'Streaming active';
-
-    createPlayer();
-
-    startStatsUpdater();
-
-  } catch (error) {
-
-    alert(error.message);
-
-  } finally {
-
-    startBtn.disabled = false;
-    startBtn.innerText = 'Start Stream';
-  }
 }
 
 
 // =====================================================
-// STATS FUNCTIONS
+// STATS
 // =====================================================
 
-/*
-INPUT:
-  none
-
-OUTPUT:
-  updates download stats every second
-*/
 function startStatsUpdater() {
-
-  statsArea.style.display = 'flex';
-
-  clearInterval(statsInterval);
-
-  statsInterval = setInterval(loadStats, 1000);
+    statsArea.style.display = 'flex';
+    clearInterval(statsInterval);
+    statsInterval = setInterval(loadStats, 1000);
 }
 
-
-/*
-INPUT:
-  none
-
-OUTPUT:
-  fetches current torrent stats
-*/
 async function loadStats() {
+    try {
+        const res  = await fetch('/api/stats');
+        const data = await res.json();
+        if (!data.active) return;
 
-  try {
+        document.getElementById('speedVal').innerText    = `${data.downloadSpeed} MB/s`;
+        document.getElementById('peersVal').innerText    = data.peers;
+        document.getElementById('progressVal').innerText = `${data.progress}%`;
 
-    const response = await fetch('/api/stats');
-    const data = await response.json();
-
-    if (!data.active) return;
-
-    document.getElementById('speedVal').innerText = `${data.downloadSpeed} MB/s`;
-    document.getElementById('peersVal').innerText = data.peers;
-    document.getElementById('progressVal').innerText = `${data.progress}%`;
-
-  } catch {}
+        if (pausedBadge) {
+            pausedBadge.style.display = data.paused ? 'inline' : 'none';
+        }
+    } catch {}
 }
 
 
 // =====================================================
-// HISTORY FUNCTIONS
+// ANIME INFO PANEL
 // =====================================================
 
-/*
-INPUT:
-  none
+/** Reset the panel to loading state before a new stream. */
+function clearAnimePanel() {
+    const panel = document.getElementById('animePanel');
+    if (panel) panel.innerHTML = '<p class="anime-loading">Fetching info…</p>';
+}
 
-OUTPUT:
-  opens history modal
-*/
-async function loadHistory() {
-
-  document.getElementById('historyModal').style.display = 'flex';
-
-  historyList.innerHTML = 'Loading history...';
-
-  try {
-
-    const response = await fetch('/api/history');
-    const list = await response.json();
-
-    if (list.length === 0) {
-      historyList.innerHTML = 'No history found';
-      return;
+/** Fetch anime metadata from the server (non-blocking). */
+async function loadAnimeInfo(filename) {
+    try {
+        const res  = await fetch(`/api/anime-info?title=${encodeURIComponent(filename)}`);
+        const info = await res.json();
+        if (info) {
+            renderAnimePanel(info);
+        } else {
+            const panel = document.getElementById('animePanel');
+            if (panel) panel.innerHTML = '<p class="anime-loading">No info found</p>';
+        }
+    } catch {
+        const panel = document.getElementById('animePanel');
+        if (panel) panel.innerHTML = '<p class="anime-loading">Could not load info</p>';
     }
+}
 
-    historyList.innerHTML = '';
+/** Render the fetched anime info into the side panel. */
+function renderAnimePanel(info) {
+    const panel = document.getElementById('animePanel');
+    if (!panel) return;
 
-    list.forEach(item => {
+    const genreTags = (info.genres || [])
+        .map(g => `<span class="tag">${g}</span>`)
+        .join('');
 
-      const div = document.createElement('div');
+    const studioTags = (info.studios || [])
+        .map(s => `<span class="tag tag-studio">${s}</span>`)
+        .join('');
 
-      div.className = 'list-item';
+    const scoreHtml = info.score
+        ? `<span class="score-badge">⭐ ${info.score}</span>`
+        : '';
 
-      div.innerHTML = `
-        <div class="list-item-info">
-          <div class="list-item-title">${item.title}</div>
-          <div class="list-item-meta">${item.progress}% downloaded</div>
+    const rankHtml = info.rank
+        ? `<span class="rank-badge">#${info.rank}</span>`
+        : '';
+
+    const synopsis = info.synopsis
+        ? (info.synopsis.length > 380
+            ? info.synopsis.slice(0, 380) + '…'
+            : info.synopsis)
+        : '';
+
+    const relHtml = (info.relations || [])
+        .flatMap(rel => rel.entries.map(e =>
+            `<span class="relation-entry">
+                <span class="rel-type">${rel.relation}</span>
+                ${escHtml(e.name)}
+             </span>`
+        ))
+        .join('');
+
+    const metaRows = [
+        info.episodes ? `<tr><td>Episodes</td><td>${info.episodes}</td></tr>` : '',
+        info.status   ? `<tr><td>Status</td><td>${info.status}</td></tr>`     : '',
+        info.aired    ? `<tr><td>Aired</td><td>${info.aired}</td></tr>`       : '',
+    ].join('');
+
+    panel.innerHTML = `
+        ${info.poster
+            ? `<img class="anime-poster" src="${info.poster}" alt="${escHtml(info.title)}" loading="lazy">`
+            : ''}
+
+        <div class="anime-body">
+
+            <div class="anime-title-row">
+                <h2 class="anime-name">${escHtml(info.title || '—')}</h2>
+                <div class="anime-badges">${scoreHtml}${rankHtml}</div>
+            </div>
+
+            ${info.titleJapanese
+                ? `<p class="anime-name-jp">${escHtml(info.titleJapanese)}</p>`
+                : ''}
+
+            ${genreTags || studioTags
+                ? `<div class="anime-tags">${genreTags}${studioTags}</div>`
+                : ''}
+
+            ${metaRows
+                ? `<table class="anime-meta-table">${metaRows}</table>`
+                : ''}
+
+            ${synopsis
+                ? `<p class="anime-synopsis">${escHtml(synopsis)}</p>`
+                : ''}
+
+            ${relHtml
+                ? `<div class="anime-relations">${relHtml}</div>`
+                : ''}
+
         </div>
+    `;
+}
 
-        <button class="btn-load-item">Stream</button>
-      `;
-
-      div.querySelector('button').onclick = () => {
-        closeModal();
-        magnetInput.value = item.magnetLink;
-        startStream(item.magnetLink);
-      };
-
-      historyList.appendChild(div);
-    });
-
-  } catch {
-
-    historyList.innerHTML = 'Failed to load history';
-  }
+/** Escape HTML entities to avoid XSS from torrent filenames / API data. */
+function escHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 
 // =====================================================
-// VLC BUTTON
+// HISTORY MODAL
+// =====================================================
+
+function closeModal() {
+    document.getElementById('historyModal').style.display = 'none';
+}
+
+async function loadHistory() {
+    document.getElementById('historyModal').style.display = 'flex';
+    historyList.innerHTML = 'Loading…';
+
+    try {
+        const res  = await fetch('/api/history');
+        const list = await res.json();
+
+        if (!list.length) {
+            historyList.innerHTML = '<p class="anime-loading">No history yet</p>';
+            return;
+        }
+
+        historyList.innerHTML = '';
+
+        list.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'list-item';
+
+            div.innerHTML = `
+                <div class="list-item-info">
+                    <div class="list-item-title">${escHtml(item.title)}</div>
+                </div>
+                <div class="list-item-actions">
+                    <button class="btn-load-item">▶ Stream</button>
+                    <button class="btn-del-item">✕</button>
+                </div>
+            `;
+
+            // Stream button
+            div.querySelector('.btn-load-item').onclick = () => {
+                magnetInput.value = item.magnetLink;
+                closeModal();
+                startStream(item.magnetLink);
+            };
+
+            // Delete button — identified by magnetLink, not fragile index
+            div.querySelector('.btn-del-item').onclick = async e => {
+                e.stopPropagation();
+                await fetch('/api/history', {
+                    method:  'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ magnetLink: item.magnetLink }),
+                });
+                div.remove();
+            };
+
+            historyList.appendChild(div);
+        });
+
+    } catch {
+        historyList.innerHTML = 'Failed to load history';
+    }
+}
+
+// Close modal when clicking the dark overlay
+document.getElementById('historyModal').addEventListener('click', e => {
+    if (e.target.id === 'historyModal') closeModal();
+});
+
+
+// =====================================================
+// VLC  — FIX: endpoint now exists on the server
 // =====================================================
 
 vlcBtn.addEventListener('click', async () => {
-
-  try {
-    await fetch('/api/open-vlc', {
-      method: 'POST'
-    });
-  } catch (error) {
-    console.error(error);
-  }
+    try {
+        const res = await fetch('/api/open-vlc', { method: 'POST' });
+        if (!res.ok) alert('Could not open VLC. Make sure VLC is installed.');
+    } catch {
+        alert('Error contacting server');
+    }
 });
 
 
 // =====================================================
-// BUTTON EVENTS
+// STOP ON PAGE UNLOAD  (refresh / close / navigate)
+// =====================================================
+
+window.addEventListener('beforeunload', () => {
+    isUnloading = true;           // prevents pause event from firing a separate request
+    navigator.sendBeacon('/api/stop-stream');
+});
+
+
+// =====================================================
+// BUTTONS
 // =====================================================
 
 startBtn.addEventListener('click', () => {
-
-  const magnet = magnetInput.value.trim();
-
-  if (!magnet) {
-    return alert('Paste magnet link');
-  }
-
-  startStream(magnet);
+    const magnet = magnetInput.value.trim();
+    if (!magnet) { alert('Paste a magnet link first'); return; }
+    startStream(magnet);
 });
 
 historyBtn.addEventListener('click', loadHistory);
 
 
 // =====================================================
-// INITIAL LOAD
+// INIT
 // =====================================================
 
 loadTheme();

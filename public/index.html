@@ -3,18 +3,9 @@
 
 <head>
     <meta charset="UTF-8" />
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    />
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AniTOR</title>
-
-    <!-- CSS -->
     <link rel="stylesheet" href="style.css" />
-
-    <!-- ArtPlayer -->
     <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
 </head>
 
@@ -30,15 +21,9 @@
 
         <div class="header-controls">
 
-            <button
-                id="historyBtn"
-                class="btn-secondary"
-            >
-                History
-            </button>
+            <button id="historyBtn" class="btn-secondary">History</button>
 
             <select id="themeSelect">
-
                 <option value="dark">Dark</option>
                 <option value="cyan">Cyan</option>
                 <option value="light">Light</option>
@@ -53,7 +38,6 @@
                 <option value="solarized-dark">Solarized Dark</option>
                 <option value="twilight">Twilight</option>
                 <option value="xonokai">Xonokai</option>
-
             </select>
 
         </div>
@@ -70,59 +54,39 @@
         <!-- INPUT -->
 
         <div class="input-wrapper">
-
-            <input
-                type="text"
-                id="magnetInput"
-                placeholder="Paste magnet link..."
-            />
-
-            <button id="startBtn">
-                Start Stream
-            </button>
-
+            <input type="text" id="magnetInput" placeholder="Paste magnet link…" />
+            <button id="startBtn">Start Stream</button>
         </div>
 
 
-        <!-- VIDEO -->
+        <!-- VIDEO + ANIME INFO (side by side) -->
 
-        <div
-            id="videoUI"
-            style="display: none;"
-        >
+        <div id="videoUI" style="display: none;">
+            <div class="stream-layout">
 
-            <div class="viewport-box">
+                <!-- LEFT: Player + status -->
+                <div class="stream-main">
 
-                <div
-                    id="artContainer"
-                    class="artplayer-app"
-                ></div>
+                    <div class="viewport-box">
+                        <div id="artContainer" class="artplayer-app"></div>
+                    </div>
 
-            </div>
-
-
-            <!-- STATUS -->
-
-            <div class="status-panel">
-
-                <div class="meta-details">
-
-                    <h3 id="videoTitle">
-                        Waiting...
-                    </h3>
-
-                    <p id="verifiedBadge">
-                        Ready
-                    </p>
+                    <div class="status-panel">
+                        <div class="meta-details">
+                            <h3 id="videoTitle">Waiting…</h3>
+                            <p id="verifiedBadge">Ready</p>
+                        </div>
+                        <button id="vlcBtn">▶ Open in VLC</button>
+                    </div>
 
                 </div>
 
-                <button id="vlcBtn">
-                    Stream Locally
-                </button>
+                <!-- RIGHT: Anime info -->
+                <aside id="animePanel" class="anime-panel">
+                    <p class="anime-loading">Fetching info…</p>
+                </aside>
 
             </div>
-
         </div>
 
     </main>
@@ -132,33 +96,17 @@
     <!-- HISTORY MODAL -->
     <!-- ================================================= -->
 
-    <div
-        id="historyModal"
-        class="modal-overlay"
-    >
-
+    <div id="historyModal" class="modal-overlay">
         <div class="modal-card">
 
             <div class="modal-header">
-
                 <h2>History</h2>
-
-                <button
-                    class="btn-secondary"
-                    onclick="closeModal()"
-                >
-                    ✕
-                </button>
-
+                <button class="btn-secondary" onclick="closeModal()">✕</button>
             </div>
 
-            <div
-                id="historyList"
-                class="modal-body"
-            ></div>
+            <div id="historyList" class="modal-body"></div>
 
         </div>
-
     </div>
 
 
@@ -168,37 +116,14 @@
 
     <footer>
 
-        <div
-            id="statsArea"
-            class="telemetry-metrics"
-            style="display: none;"
-        >
-
-            <span>
-                Speed:
-                <strong id="speedVal">0 MB/s</strong>
-            </span>
-
-            <span>
-                Peers:
-                <strong id="peersVal">0</strong>
-            </span>
-
-            <span>
-                Progress:
-                <strong id="progressVal">0%</strong>
-            </span>
-
+        <div id="statsArea" class="telemetry-metrics" style="display: none;">
+            <span>Speed: <strong id="speedVal">0 MB/s</strong></span>
+            <span>Peers: <strong id="peersVal">0</strong></span>
+            <span>Progress: <strong id="progressVal">0%</strong></span>
+            <span id="pausedBadge" style="display:none;" class="badge-paused">⏸ Paused</span>
         </div>
 
-
-        <a
-            href="https://github.com/Arindom-Lane/AniTOR"
-            target="_blank"
-            class="btn-secondary"
-        >
-            GitHub
-        </a>
+        <a href="https://github.com/Arindom-Lane/AniTOR" target="_blank" class="btn-secondary">GitHub</a>
 
     </footer>
 
@@ -207,18 +132,7 @@
     <!-- JS -->
     <!-- ================================================= -->
 
-    <script src="./main.js"></script>
-
-    <script>
-
-        function closeModal() {
-
-            document.getElementById(
-                'historyModal'
-            ).style.display = 'none';
-        }
-
-    </script>
+    <script src="main.js"></script>
 
 </body>
 </html>
