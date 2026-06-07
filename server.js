@@ -427,13 +427,13 @@ app.get('/api/stats', (req, res) => {
 
 // =====================================================
 // IDLE CLEANUP
-// Only fires when NOT paused and genuinely idle (30 s).
+// Only fires when NOT paused and genuinely idle (4 min).
 // Paused = user intentionally stopped; don't destroy.
 // =====================================================
 setInterval(async () => {
     if (!currentTorrent || isPaused) return;
-    if (Date.now() - lastActivity > 30_000) {
-        console.log('[torrent] Idle 30 s – cleaning up');
+    if (Date.now() - lastActivity > 240_000) {
+        console.log('[torrent] Idle 4 min – cleaning up');
         await destroyTorrent();
     }
 }, 5000);
