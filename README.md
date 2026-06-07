@@ -8,8 +8,7 @@ VLC Integration: Take your stream directly to VLC for a superior playback experi
 
 ## How does it work?
 
-* **Stream:** It loads the video chunk-by-chunk and plays it. You can skip ahead and play it at any timestamp.
-* **Cache:** The video is stored in `AniTOR-1.0.0\temp_cache` folder.
+* **Stream:** It loads the video chunk-by-chunk and plays it. You can skip ahead and play it at any timestamp
 * **Local playback:** The stream can be played directly in VLC player live (from where you can chose multiple subtitle and access dual audio features).
 
 ## Usage
@@ -17,7 +16,7 @@ VLC Integration: Take your stream directly to VLC for a superior playback experi
 * **VPN:** Make sure you have your VPN turned on if it is required.
 * **Launch:** Download and double-click `Start_AniTOR.bat`.
 * **Note:** This works best with torrents that contain only one video file.
-* **Site:** http://localhost:3000/
+* **Site open from:** http://localhost:3000/
 
 
 <img width="1474" height="944" alt="image" src="https://github.com/user-attachments/assets/f57fc2c8-524c-440e-ab9a-df28f8aac100" />
