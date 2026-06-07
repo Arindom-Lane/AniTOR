@@ -6,10 +6,9 @@ AniTOR is a lightweight, local-first streaming application that allows you to wa
 
 VLC Integration: Take your stream directly to VLC for a superior playback experience.
 
-## How does it work?
-
-* **Stream:** It loads the video chunk-by-chunk and plays it. You can skip ahead and play it at any timestamp
-* **Local playback:** The stream can be played directly in VLC player live (from where you can chose multiple subtitle and access dual audio features).
+why stream in VLC?
+- For selecting multiple **subtitle** or adding your own.
+- Accessing **Dual Audio** feature even from a live stream. 
 
 ## Usage
 
@@ -17,6 +16,7 @@ VLC Integration: Take your stream directly to VLC for a superior playback experi
 * **Launch:** Download and double-click `Start_AniTOR.bat`.
 * **Note:** This works best with torrents that contain only one video file.
 * **Site open from:** http://localhost:3000/
+* **Streaming via VLC media player is highly recommended**
 
 
 <img width="1474" height="944" alt="image" src="https://github.com/user-attachments/assets/f57fc2c8-524c-440e-ab9a-df28f8aac100" />
