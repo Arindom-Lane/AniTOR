@@ -32,9 +32,9 @@ webtorrent (Torrent client)
 Artplayer
 
 
-Future work:
-Change to NestJS
-Use REST API
+### Future work:
+Change to NestJS,
+Use REST API,
 Proper use of DB system
 
 
