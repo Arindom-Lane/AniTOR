@@ -1,0 +1,24 @@
+#vlcBtn {
+  background: #9e4700;
+  color: #fff;
+  border: 1px solid #bd5500;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.vlc-browser-hint {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+.vlc-hint-icon { font-size: 1.1rem; flex-shrink: 0; }

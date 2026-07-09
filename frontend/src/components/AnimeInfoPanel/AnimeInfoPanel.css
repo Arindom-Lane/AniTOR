@@ -1,0 +1,89 @@
+.anime-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(56.25vw * 0.55 + 60px);
+  overflow-y: auto;
+}
+@media (max-width: 960px) {
+  .anime-panel { max-height: none; }
+}
+
+.anime-loading { padding: 24px; text-align: center; opacity: 0.45; font-size: 0.88rem; }
+
+.anime-poster {
+  width: 100%;
+  display: block;
+  object-fit: cover;
+  max-height: 320px;
+  border-bottom: 1px solid var(--border);
+}
+
+.anime-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+
+.anime-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.anime-name { font-size: 0.95rem; font-weight: 700; line-height: 1.35; }
+
+.anime-badges { display: flex; gap: 5px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.score-badge, .rank-badge {
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.score-badge { background: var(--accent); color: #fff; }
+.rank-badge { background: var(--border); color: var(--text); }
+
+.anime-name-jp { font-size: 0.78rem; opacity: 0.55; margin-top: -6px; }
+
+.anime-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.tag {
+  background: rgba(138, 43, 226, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(138, 43, 226, 0.3);
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.tag-studio {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  border-color: var(--border);
+  opacity: 0.7;
+}
+
+.anime-meta-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.anime-meta-table td { padding: 3px 0; vertical-align: top; }
+.anime-meta-table td:first-child { opacity: 0.45; width: 66px; padding-right: 8px; white-space: nowrap; }
+.anime-meta-table td:last-child { font-weight: 600; }
+
+.anime-synopsis { font-size: 0.8rem; line-height: 1.65; opacity: 0.75; }
+
+.anime-relations { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.relation-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  background: rgba(138, 43, 226, 0.06);
+  border: 1px solid rgba(138, 43, 226, 0.18);
+  padding: 5px 10px;
+  border-radius: 6px;
+}
+.rel-type {
+  background: var(--accent);
+  color: #fff;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
+}

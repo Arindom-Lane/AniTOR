@@ -1,0 +1,17 @@
+header strong {
+  font-size: 1.1rem;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+  text-transform: uppercase;
+}
+
+.header-controls { display: flex; gap: 10px; align-items: center; }
+
+.mode-badge {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 8px 12px;
+}
+.mode-badge:hover { border-color: var(--accent); opacity: 1; color: var(--accent); }

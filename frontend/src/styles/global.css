@@ -1,0 +1,203 @@
+/* =====================================================
+   RESET
+   ===================================================== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: background 0.3s ease, color 0.3s ease;
+  overflow-x: hidden;
+}
+
+/* Optional cinematic mode — dims chrome around the player. Not
+   wired up to any component yet; add the `cinematic-dim` class to
+   <body> from wherever fullscreen/idle detection lands in future. */
+body.cinematic-dim header,
+body.cinematic-dim .input-wrapper,
+body.cinematic-dim .status-panel,
+body.cinematic-dim footer { opacity: var(--dim-opacity); }
+body.cinematic-dim { cursor: none; }
+
+/* =====================================================
+   HEADER (bar chrome only — badge/controls in Header.css)
+   ===================================================== */
+header {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+/* =====================================================
+   FORM CONTROLS (shared base look for every button/input/select)
+   ===================================================== */
+select, button, input {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.9rem;
+  outline: none;
+  font-weight: 600;
+  appearance: none;
+  text-align: center;
+}
+
+input[type="text"] { width: 100%; text-align: left; }
+input[type="text"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(138, 43, 226, 0.12);
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+button.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* =====================================================
+   MAIN LAYOUT
+   ===================================================== */
+main { flex: 1; max-width: 1200px; width: 100%; margin: 24px auto; padding: 0 16px; }
+
+.input-wrapper {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 18px;
+  background: var(--panel);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+/* Shown under the input bar before the first stream starts in VLC mode. */
+.vlc-mode-hint {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.vlc-mode-hint .vlc-hint-icon { font-size: 1.3rem; flex-shrink: 0; }
+
+/* Player (left) + anime info (right) */
+.stream-layout {
+  display: grid;
+  grid-template-columns: 1fr 290px;
+  gap: 16px;
+  align-items: start;
+}
+.stream-main { display: flex; flex-direction: column; gap: 14px; }
+
+@media (max-width: 960px) {
+  .stream-layout { grid-template-columns: 1fr; }
+}
+
+/* =====================================================
+   VIDEO PLAYER SHELL
+   ===================================================== */
+.viewport-box {
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
+}
+.artplayer-app { width: 100%; aspect-ratio: 16 / 9; }
+
+.status-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 14px 18px;
+  border-radius: 10px;
+  gap: 12px;
+}
+.meta-details h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 480px;
+}
+.meta-details p { font-size: 0.85rem; color: var(--accent); font-weight: 600; }
+
+/* =====================================================
+   MODAL CHROME (used by HistoryModal — list items styled
+   separately in HistoryModal.css)
+   ===================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.modal-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 92%;
+  max-width: 640px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.modal-body {
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* =====================================================
+   RESPONSIVE
+   ===================================================== */
+@media (max-width: 640px) {
+  header strong { font-size: 1rem; }
+  .input-wrapper { flex-direction: column; gap: 8px; }
+  .meta-details h3 { font-size: 0.9rem; max-width: 200px; }
+  .status-panel { flex-direction: column; align-items: flex-start; gap: 10px; }
+}

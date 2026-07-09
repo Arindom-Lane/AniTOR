@@ -1,0 +1,119 @@
+/*
+ * Every theme is just a set of CSS custom properties. Components
+ * never hardcode colors — they reference var(--bg), var(--accent),
+ * etc., so switching themes is a single attribute change on <html>
+ * (see useTheme.ts) rather than touching any component code.
+ */
+
+:root[data-theme="dark"] {
+  --bg: #0d0d11;
+  --panel: #141419;
+  --text: #f1f1f5;
+  --accent: #8a2be2;
+  --border: #22222d;
+  --dim-opacity: 0.10;
+}
+:root[data-theme="cyan"] {
+  --bg: #00151c;
+  --panel: #00222a;
+  --text: #e1d9c3;
+  --accent: #00ffe0;
+  --border: #003844;
+  --dim-opacity: 0.10;
+}
+:root[data-theme="light"] {
+  --bg: #fdfdfd;
+  --panel: #f4f4f6;
+  --text: #1a1a1f;
+  --accent: #4b0082;
+  --border: #e2e2e7;
+  --dim-opacity: 0.15;
+}
+:root[data-theme="atom-material"] {
+  --bg: #263238;
+  --panel: #37474f;
+  --text: #ECEFF1;
+  --accent: #FF9800;
+  --border: #455A64;
+  --dim-opacity: 0.12;
+}
+:root[data-theme="default"] {
+  --bg: #ffffff;
+  --panel: #f4f4f4;
+  --text: #000000;
+  --accent: #3498db;
+  --border: #dddddd;
+  --dim-opacity: 0.08;
+}
+:root[data-theme="github-dark"] {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --text: #f0f6fc;
+  --accent: #58a6ff;
+  --border: #30363d;
+  --dim-opacity: 0.12;
+}
+:root[data-theme="hopscotch"] {
+  --bg: #322931;
+  --panel: #433a42;
+  --text: #d5d3d6;
+  --accent: #ffad5c;
+  --border: #5c4f5b;
+  --dim-opacity: 0.12;
+}
+:root[data-theme="monokai"] {
+  --bg: #272822;
+  --panel: #3e3d32;
+  --text: #f8f8f2;
+  --accent: #f92672;
+  --border: #49483e;
+  --dim-opacity: 0.12;
+}
+:root[data-theme="okaidia"] {
+  --bg: #272822;
+  --panel: #383830;
+  --text: #f8f8f2;
+  --accent: #66d9ef;
+  --border: #49483e;
+  --dim-opacity: 0.12;
+}
+:root[data-theme="one-dark"] {
+  --bg: #282c34;
+  --panel: #3a3f4b;
+  --text: #abb2bf;
+  --accent: #61afef;
+  --border: #4b5263;
+  --dim-opacity: 0.12;
+}
+:root[data-theme="pojoaque"] {
+  --bg: #2c2c2c;
+  --panel: #3c3c3c;
+  --text: #d0d0d0;
+  --accent: #ffcc66;
+  --border: #505050;
+  --dim-opacity: 0.12;
+}
+:root[data-theme="solarized-dark"] {
+  --bg: #002b36;
+  --panel: #073642;
+  --text: #839496;
+  --accent: #268bd2;
+  --border: #586e75;
+  --dim-opacity: 0.12;
+}
+:root[data-theme="twilight"] {
+  --bg: #141414;
+  --panel: #1e1e1e;
+  --text: #f8f8f8;
+  --accent: #bf79db;
+  --border: #2a2a2a;
+  --dim-opacity: 0.12;
+}
+:root[data-theme="xonokai"] {
+  --bg: #1e1e1e;
+  --panel: #2a2a2a;
+  --text: #f8f8f2;
+  --accent: #f92672;
+  --border: #3a3a3a;
+  --dim-opacity: 0.12;
+}
