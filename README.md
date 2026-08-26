@@ -1,4 +1,4 @@
-# AniTOR 📺
+# AniTOR
 
 **Ad-Free Anime Streaming Engine.**
 
