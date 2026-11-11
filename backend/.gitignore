@@ -1,6 +1,0 @@
-node_modules/
-dist/
-.env
-temp_cache/
-history.json
-*.log

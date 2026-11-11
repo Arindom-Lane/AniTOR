@@ -1,341 +1,248 @@
 import {
+  BadRequestException,
+  ConflictException,
+  GatewayTimeoutException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
-  BadRequestException,
-  OnModuleInit,
   OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import type { Request, Response } from 'express';
-import * as fs from 'fs';
-import * as path from 'path';
+import MemoryStore from 'memory-chunk-store';
+import { extname } from 'node:path';
+import type { Readable } from 'node:stream';
+import WebTorrent from 'webtorrent';
+import type { Torrent, TorrentFile } from 'webtorrent';
+import { IDLE_TIMEOUT_MS, METADATA_TIMEOUT_MS } from '../config.js';
 
-import { HistoryService } from '../history/history.service';
-import { TorrentStats } from './interfaces/torrent-stats.interface';
-
-// Optional in-memory chunk store. When installed, torrent pieces live
-// entirely in RAM and are freed the instant the torrent is removed —
-// this is the same trick real streaming/CDN edge caches use to avoid
-// wearing out SSDs on data that's only needed transiently. If it isn't
-// installed, we fall back to disk-backed storage automatically.
-//
-// require() (not import) is used deliberately here: it's the only way
-// to make this dependency truly optional — a top-level `import` would
-// throw at module-load time if the package isn't installed, whereas
-// require() inside try/catch lets us detect that and fall back cleanly.
-let MemoryStore: any = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  MemoryStore = require('memory-chunk-store');
-} catch {
-  // Not installed — fine, we just use disk storage instead.
-}
-
-// webtorrent (v2+) publishes as ESM-only and uses top-level await
-// internally, which a synchronous require() cannot load at all —
-// Node throws ERR_REQUIRE_ASYNC_MODULE. A plain `import` statement
-// doesn't work either: TypeScript compiles this project to CommonJS,
-// and by default it down-levels `import()` to a require() call under
-// the hood, hitting the exact same error.
-//
-// The fix is to force a *genuine* native dynamic import, bypassing
-// TypeScript's down-leveling entirely. Wrapping import() in `new
-// Function(...)` hides it from the compiler, so it's emitted exactly
-// as written and Node handles it as real ESM loading at runtime.
-// WebTorrent is loaded once, lazily, in onModuleInit() below.
-const dynamicImport = new Function('specifier', 'return import(specifier)') as (
-  specifier: string,
-) => Promise<any>;
-
-const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.webm', '.avi'];
-
-const MIME_TYPES: Record<string, string> = {
+const MIME: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.mkv': 'video/x-matroska',
   '.webm': 'video/webm',
   '.avi': 'video/x-msvideo',
 };
 
+export interface RangeResult {
+  stream: Readable;
+  start: number;
+  end: number;
+  size: number;
+  mime: string;
+}
+
 @Injectable()
 export class TorrentService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(TorrentService.name);
+  private readonly log = new Logger(TorrentService.name);
+  private readonly client = new WebTorrent();
 
-  private client: any;
-  private currentTorrent: any = null;
-  private currentStream: any = null;
-
-  /** True while the browser player is paused — download is halted. */
-  private isPaused = false;
-
-  /** Bumped on every streamed chunk; drives the idle-cleanup timer. */
+  private current: Torrent | null = null;
+  private readonly streams = new Set<Readable>();
   private lastActivity = Date.now();
+  private paused = false;
+  private idleTimer?: NodeJS.Timeout;
 
-  private readonly cacheDir: string;
-  private readonly useMemoryStore: boolean;
-  private readonly idleTimeoutMs: number;
-  private readonly pieceWindowBytes: number;
-  private idleCheckHandle: NodeJS.Timeout;
-
-  constructor(
-    private readonly config: ConfigService,
-    private readonly historyService: HistoryService,
-  ) {
-    this.cacheDir = path.join(process.cwd(), this.config.get<string>('cacheDir')!);
-    this.useMemoryStore = this.config.get<boolean>('useMemoryStore')! && !!MemoryStore;
-    this.idleTimeoutMs = this.config.get<number>('idleTimeoutMs')!;
-    this.pieceWindowBytes = this.config.get<number>('pieceWindowBytes')!;
-
-    if (!this.useMemoryStore && !fs.existsSync(this.cacheDir)) {
-      fs.mkdirSync(this.cacheDir, { recursive: true });
-    }
-
-    this.logger.log(
-      this.useMemoryStore
-        ? 'Storage mode: RAM (memory-chunk-store) — zero SSD writes'
-        : 'Storage mode: disk (temp_cache/) — install memory-chunk-store to avoid SSD writes',
-    );
+  onModuleInit() {
+    // Without this an unexpected WebTorrent error would crash the whole process.
+    this.client.on('error', (err) => this.log.error(`client error: ${String(err)}`));
+    this.idleTimer = setInterval(() => void this.cleanupIfIdle(), 5000);
   }
 
-  async onModuleInit() {
-    const { default: WebTorrent } = await dynamicImport('webtorrent');
-    this.client = new WebTorrent();
-
-    // Only tear down a torrent for being "idle" if it's genuinely
-    // abandoned. A paused player is a deliberate user action, not
-    // idleness, so it's explicitly excluded from this check.
-    this.idleCheckHandle = setInterval(() => {
-      if (!this.currentTorrent || this.isPaused) return;
-
-      const idleFor = Date.now() - this.lastActivity;
-      if (idleFor > this.idleTimeoutMs) {
-        this.logger.log(`Idle for ${Math.round(idleFor / 1000)}s — cleaning up torrent`);
-        this.destroyTorrent();
-      }
-    }, this.config.get<number>('idleCheckIntervalMs'));
-  }
-
-  onModuleDestroy() {
-    clearInterval(this.idleCheckHandle);
-    this.destroyTorrent();
-  }
-
-  // =====================================================
-  // PUBLIC API — one method per REST endpoint
-  // =====================================================
-
-  /**
-   * Add a magnet link, locate its video file, and record it in
-   * history. Any previous torrent is torn down first — this is
-   * also what guarantees old cached data never lingers when a
-   * new magnet link is pasted in.
-   */
-  async startStream(magnetLink: string): Promise<{ title: string }> {
+  async onModuleDestroy() {
+    clearInterval(this.idleTimer);
     await this.destroyTorrent();
-
-    const addOptions = this.useMemoryStore
-      ? { store: MemoryStore }
-      : { path: path.join(this.cacheDir, Date.now().toString()) };
-
-    return new Promise((resolve, reject) => {
-      this.client.add(magnetLink, addOptions, (torrent: any) => {
-        this.currentTorrent = torrent;
-        this.isPaused = false;
-        this.lastActivity = Date.now();
-
-        const video = this.getVideoFile(torrent);
-        if (!video) {
-          this.destroyTorrent();
-          reject(new NotFoundException('No playable video file found in this torrent'));
-          return;
-        }
-
-        // Don't download anything yet. The video-stream endpoint
-        // below selects only the byte range the player actually
-        // asks for, the moment it asks for it.
-        torrent.pause();
-        this.isPaused = true;
-
-        this.historyService.add(video.name, magnetLink);
-
-        resolve({ title: video.name });
-      });
-    });
+    this.client.destroy();
   }
 
-  /**
-   * Serve a byte-range chunk of the current video, selecting only
-   * the torrent pieces needed for that chunk. This — plus pause/resume
-   * below — is the core of "don't download the whole file" streaming.
-   */
-  async streamVideo(req: Request, res: Response): Promise<void> {
-    if (!this.currentTorrent) {
-      throw new BadRequestException('No active torrent');
-    }
+  // ------------------------------------------------------------------
+  // Start / stop
+  // ------------------------------------------------------------------
 
-    const file = this.getVideoFile(this.currentTorrent);
-    if (!file) {
-      throw new NotFoundException('No video file in torrent');
-    }
-
-    const range = req.headers.range;
-    if (!range) {
-      throw new BadRequestException('Range header is required for video streaming');
-    }
-
-    const [rawStart, rawEnd] = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(rawStart, 10);
-    const end = rawEnd
-      ? parseInt(rawEnd, 10)
-      : Math.min(start + this.pieceWindowBytes, file.length - 1);
-    const chunkSize = end - start + 1;
-
-    this.selectPieceWindow(start, end);
-
-    // A range request is playback activity by definition — resume
-    // downloading if we were paused.
-    if (this.isPaused) {
-      this.currentTorrent.resume();
-      this.isPaused = false;
-    }
-
-    const mimeType = MIME_TYPES[path.extname(file.name).toLowerCase()] || 'video/mp4';
-
-    res.writeHead(206, {
-      'Content-Range': `bytes ${start}-${end}/${file.length}`,
-      'Accept-Ranges': 'bytes',
-      'Content-Length': chunkSize,
-      'Content-Type': mimeType,
-      'Cache-Control': 'no-store',
-    });
-
+  /** Adds the magnet, waits for metadata, returns the video file name. */
+  async start(magnetLink: string): Promise<string> {
+    await this.destroyTorrent();
     this.lastActivity = Date.now();
+    this.paused = false;
 
-    const stream = file.createReadStream({ start, end });
-    this.currentStream = stream;
-
-    stream.on('data', () => {
-      this.lastActivity = Date.now();
-    });
-    stream.on('error', (err: Error) => this.logger.error(`Stream error: ${err.message}`));
-    stream.on('close', () => {
-      this.currentStream = null;
-    });
-
-    res.on('close', () => {
-      try {
-        stream.destroy();
-      } catch {
-        // stream may already be closed — safe to ignore
-      }
-      this.currentStream = null;
-    });
-
-    stream.pipe(res);
-  }
-
-  /**
-   * Halt downloading. Called when the browser player is paused.
-   * The torrent itself is left intact so playback can resume
-   * instantly, without re-fetching metadata or re-connecting peers.
-   */
-  pauseDownload(): { paused: boolean } {
-    if (this.currentTorrent && !this.isPaused) {
-      this.currentTorrent.pause();
-      this.isPaused = true;
-      this.logger.log('Download paused');
+    let torrent: Torrent;
+    try {
+      // MemoryStore = pieces live in RAM, nothing is written to your SSD.
+      torrent = this.client.add(magnetLink, { store: MemoryStore });
+    } catch {
+      throw new BadRequestException('Invalid magnet link');
     }
-    return { paused: this.isPaused };
-  }
+    this.current = torrent;
+    torrent.on('error', (err) => this.log.warn(`torrent error: ${String(err)}`));
 
-  /** Resume downloading after a pause. */
-  resumeDownload(): { paused: boolean } {
-    if (this.currentTorrent && this.isPaused) {
-      this.currentTorrent.resume();
-      this.isPaused = false;
-      this.logger.log('Download resumed');
-    }
-    return { paused: this.isPaused };
-  }
-
-  /** Full teardown — called on page unload/refresh or when a new magnet link starts. */
-  async stopStream(): Promise<void> {
-    await this.destroyTorrent();
-  }
-
-  getStats(): TorrentStats {
-    if (!this.currentTorrent) {
-      return { active: false };
+    try {
+      await this.whenReady(torrent);
+    } catch (err) {
+      await this.destroyTorrent(torrent);
+      throw err;
     }
 
+    const video = this.getVideoFile(torrent);
+    if (!video) {
+      await this.destroyTorrent(torrent);
+      throw new NotFoundException('No video file found in torrent');
+    }
+
+    // Halt everything; readRange() resumes it when the player asks for data.
+    torrent.pause();
+    this.paused = true;
+    this.lastActivity = Date.now();
+    return video.name;
+  }
+
+  /** Tears the torrent down. If `only` is given, acts only if it is still the current one. */
+  async destroyTorrent(only?: Torrent): Promise<void> {
+    const torrent = this.current;
+    if (!torrent || (only && only !== torrent)) return;
+
+    this.log.log('Destroying torrent…');
+    for (const s of this.streams) s.destroy();
+    this.streams.clear();
+    this.current = null;
+    this.paused = false;
+
+    // torrent.destroy() also removes it from the client. We skip torrents that
+    // WebTorrent already destroyed itself (e.g. invalid magnet): destroying twice
+    // would never call back and the request would hang.
+    await new Promise<void>((resolve) => {
+      if (torrent.destroyed) return resolve();
+      torrent.destroy({ destroyStore: true }, () => resolve());
+    });
+  }
+
+  hasActive(): boolean {
+    return this.current !== null;
+  }
+
+  // ------------------------------------------------------------------
+  // Pause / resume / stats
+  // ------------------------------------------------------------------
+
+  pause() {
+    if (this.current && !this.paused) {
+      this.current.pause();
+      this.paused = true;
+      this.log.log('Download paused');
+    }
+  }
+
+  resume() {
+    if (this.current && this.paused) {
+      this.current.resume();
+      this.paused = false;
+      this.log.log('Download resumed');
+    }
+  }
+
+  stats() {
+    const t = this.current;
+    if (!t) return { active: false };
     return {
       active: true,
-      paused: this.isPaused,
-      progress: (this.currentTorrent.progress * 100).toFixed(1),
-      downloadSpeed: (this.currentTorrent.downloadSpeed / 1024 / 1024).toFixed(2),
-      peers: this.currentTorrent.numPeers,
+      paused: this.paused,
+      progress: (t.progress * 100).toFixed(1),
+      downloadSpeed: (t.downloadSpeed / 1024 / 1024).toFixed(2),
+      peers: t.numPeers,
     };
   }
 
-  // =====================================================
-  // INTERNAL HELPERS
-  // =====================================================
+  // ------------------------------------------------------------------
+  // Byte-range streaming
+  // ------------------------------------------------------------------
 
-  /** Pick the largest video file in the torrent (the main episode/movie, not samples/extras). */
-  private getVideoFile(torrent: any) {
-    return torrent.files
-      .filter((f: any) => VIDEO_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext)))
-      .sort((a: any, b: any) => b.length - a.length)[0];
-  }
+  readRange(rangeHeader?: string): RangeResult {
+    const torrent = this.current;
+    if (!torrent) throw new BadRequestException('No active torrent');
 
-  /**
-   * Narrow the torrent's piece selection down to just the window
-   * needed for the requested byte range (plus a couple of pieces
-   * ahead, for smooth playback). Everything outside that window is
-   * deselected so WebTorrent stops fetching pieces the player will
-   * never use — this is what keeps bandwidth and disk/RAM usage low,
-   * instead of greedily downloading the entire file in the background.
-   */
-  private selectPieceWindow(start: number, end: number): void {
-    const torrent = this.currentTorrent;
-    const pieceLength = torrent.pieceLength;
-    const maxPiece = torrent.pieces.length - 1;
+    const file = this.getVideoFile(torrent);
+    if (!file) throw new NotFoundException('No video file');
+    if (!rangeHeader) throw new BadRequestException('Range header required');
 
-    const startPiece = Math.max(0, Math.floor(start / pieceLength));
-    const endPiece = Math.min(Math.floor(end / pieceLength) + 2, maxPiece);
+    const match = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader);
+    if (!match) throw this.badRange();
 
-    torrent.deselect(0, maxPiece, false); // clear everything
-    torrent.select(startPiece, endPiece, true); // ...then only what we need now
-  }
+    const start = Number(match[1]);
+    const end = match[2]
+      ? Math.min(Number(match[2]), file.length - 1)
+      : Math.min(start + 4 * 1024 * 1024, file.length - 1); // 4 MB window
+    if (start > end) throw this.badRange();
 
-  /** Remove the current torrent from the client and wipe its cache folder (disk mode only). */
-  private async destroyTorrent(): Promise<void> {
-    if (!this.currentTorrent) return;
+    // Which torrent pieces cover this byte range? file.offset matters when the
+    // torrent has several files: the video does not start at byte 0 then.
+    const pieceLen = torrent.pieceLength;
+    const lastPiece = torrent.pieces.length - 1;
+    const p0 = Math.max(0, Math.floor((file.offset + start) / pieceLen));
+    const p1 = Math.min(Math.floor((file.offset + end) / pieceLen) + 2, lastPiece);
 
-    const torrent = this.currentTorrent;
-    const folderToClean = this.useMemoryStore ? null : torrent.path;
-
-    try {
-      this.currentStream?.destroy();
-    } catch {
-      // stream may already be closed
+    if (this.paused) {
+      torrent.resume();
+      this.paused = false;
     }
-    this.currentStream = null;
+    torrent.deselect(0, lastPiece); // clear everything...
+    torrent.select(p0, p1, true); // ...and fetch only what playback needs now
 
-    await new Promise<void>((resolve) => {
-      this.client.remove(torrent.infoHash, { destroyStore: true }, () => {
-        if (folderToClean && fs.existsSync(folderToClean)) {
-          try {
-            fs.rmSync(folderToClean, { recursive: true, force: true });
-          } catch (err) {
-            this.logger.warn(`Could not remove cache folder: ${(err as Error).message}`);
-          }
-        }
-        resolve();
-      });
+    const stream = file.createReadStream({ start, end });
+    this.streams.add(stream);
+    this.lastActivity = Date.now();
+
+    stream.on('data', () => (this.lastActivity = Date.now()));
+    stream.on('error', (err) => this.log.error(`stream: ${err.message}`));
+    stream.on('close', () => this.streams.delete(stream));
+
+    return {
+      stream,
+      start,
+      end,
+      size: file.length,
+      mime: MIME[extname(file.name).toLowerCase()] ?? 'video/mp4',
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Internals
+  // ------------------------------------------------------------------
+
+  private getVideoFile(torrent: Torrent): TorrentFile | undefined {
+    return torrent.files
+      .filter((f) => /\.(mp4|mkv|webm|avi)$/i.test(f.name))
+      .sort((a, b) => b.length - a.length)[0]; // the largest video file
+  }
+
+  private whenReady(torrent: Torrent): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (torrent.ready) return resolve();
+
+      const finish = (err?: Error) => {
+        clearTimeout(timer);
+        if (err) reject(err);
+        else resolve();
+      };
+      const timer = setTimeout(
+        () => finish(new GatewayTimeoutException('Timed out looking for this torrent (no peers?)')),
+        METADATA_TIMEOUT_MS,
+      );
+
+      torrent.once('ready', () => finish());
+      torrent.once('error', (e) => finish(new BadRequestException(`Torrent error: ${String(e)}`)));
+      torrent.once('close', () => finish(new ConflictException('Replaced by another stream')));
     });
+  }
 
-    this.currentTorrent = null;
-    this.isPaused = false;
+  private badRange() {
+    return new HttpException('Invalid range', HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE);
+  }
+
+  private async cleanupIfIdle() {
+    // A torrent that is paused, or still looking for metadata, is not "idle".
+    if (!this.current || this.paused || !this.current.ready) return;
+    if (Date.now() - this.lastActivity > IDLE_TIMEOUT_MS) {
+      this.log.log('Idle for 30 s – cleaning up');
+      await this.destroyTorrent();
+    }
   }
 }

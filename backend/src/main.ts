@@ -1,34 +1,19 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import { AppModule } from './app.module';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { existsSync } from 'node:fs';
+import { AppModule } from './app.module.js';
+import { ALLOWED_ORIGINS, HOST, PORT, PUBLIC_DIR } from './config.js';
 
-/**
- * Application entry point.
- *
- * Two things matter here beyond the usual boilerplate:
- *  - ValidationPipe rejects malformed requests (e.g. a missing
- *    magnetLink) at the door, before they reach a controller.
- *  - CORS is opened up to the React dev server's origin, since
- *    frontend and backend run as two separate processes in dev.
- */
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true, // strip properties not declared on the DTO
-      transform: true, // turn plain query/body objects into DTO class instances
-    }),
-  );
+  app.setGlobalPrefix('api'); // every route becomes /api/...
+  app.enableCors({ origin: ALLOWED_ORIGINS });
+  app.enableShutdownHooks(); // lets services clean up on Ctrl+C
 
-  app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  });
+  if (existsSync(PUBLIC_DIR)) app.useStaticAssets(PUBLIC_DIR);
 
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
-
-  console.log(`\n AniTOR API running on http://localhost:${port}\n`);
+  await app.listen(PORT, HOST);
+  console.log(`AniTOR backend → http://${HOST}:${PORT}`);
 }
-
-bootstrap();
+await bootstrap();

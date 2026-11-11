@@ -1,57 +1,41 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as fs from 'fs';
-import * as path from 'path';
-import { HistoryItem } from './interfaces/history-item.interface';
+import { Injectable } from '@nestjs/common';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { DATA_DIR } from '../config.js';
+
+export interface HistoryItem {
+  title: string;
+  magnetLink: string;
+}
 
 @Injectable()
 export class HistoryService {
-  private readonly logger = new Logger(HistoryService.name);
-  private readonly historyFilePath: string;
-  private readonly maxEntries = 50;
+  private readonly file = join(DATA_DIR, 'history.json');
 
-  constructor(private readonly config: ConfigService) {
-    this.historyFilePath = path.join(process.cwd(), this.config.get<string>('historyFile')!);
-
-    if (!fs.existsSync(this.historyFilePath)) {
-      fs.writeFileSync(this.historyFilePath, '[]');
-    }
+  constructor() {
+    mkdirSync(DATA_DIR, { recursive: true });
+    if (!existsSync(this.file)) writeFileSync(this.file, '[]');
   }
 
-  findAll(): HistoryItem[] {
+  list(): HistoryItem[] {
     try {
-      const raw = fs.readFileSync(this.historyFilePath, 'utf8');
-      return JSON.parse(raw);
-    } catch (err) {
-      this.logger.warn(`Could not read history file: ${(err as Error).message}`);
-      return [];
+      return JSON.parse(readFileSync(this.file, 'utf8')) as HistoryItem[];
+    } catch {
+      return []; // missing or corrupted file -> start fresh
     }
   }
 
-  private writeAll(items: HistoryItem[]): void {
-    fs.writeFileSync(this.historyFilePath, JSON.stringify(items, null, 2));
-  }
-
-  /**
-   * Add a new entry to the front of the list. Any existing entry
-   * with the same magnet link is removed first, so re-streaming the
-   * same torrent bumps it to the top instead of creating a duplicate.
-   * The list is capped at `maxEntries` so history.json can't grow
-   * without bound.
-   */
   add(title: string, magnetLink: string): void {
-    const items = this.findAll().filter((i) => i.magnetLink !== magnetLink);
+    const items = this.list().filter((i) => i.magnetLink !== magnetLink);
     items.unshift({ title, magnetLink });
-
-    if (items.length > this.maxEntries) {
-      items.length = this.maxEntries;
-    }
-
-    this.writeAll(items);
+    this.write(items.slice(0, 50)); // keep the newest 50
   }
 
   remove(magnetLink: string): void {
-    const items = this.findAll().filter((i) => i.magnetLink !== magnetLink);
-    this.writeAll(items);
+    this.write(this.list().filter((i) => i.magnetLink !== magnetLink));
+  }
+
+  private write(items: HistoryItem[]): void {
+    writeFileSync(this.file, JSON.stringify(items, null, 2));
   }
 }

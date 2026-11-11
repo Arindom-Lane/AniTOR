@@ -1,49 +1,38 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { exec } from 'child_process';
-import * as fs from 'fs';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 @Injectable()
 export class VlcService {
-  private readonly logger = new Logger(VlcService.name);
+  open(url: string): Promise<void> {
+    const [cmd, args] = this.command(url);
 
-  constructor(private readonly config: ConfigService) {}
-
-  /**
-   * Launch VLC pointed at the live HTTP stream. This is necessarily
-   * platform-specific — there's no cross-platform "open with this
-   * app" API in Node, so we build the right shell command per OS.
-   */
-  open(streamUrl: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const cmd = this.buildCommand(streamUrl);
-
-      exec(cmd, (err) => {
-        if (err) {
-          this.logger.warn(`Could not launch VLC: ${err.message}`);
-          reject(err);
-          return;
-        }
+      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+      child.on('error', (err) =>
+        reject(new InternalServerErrorException(`Could not start VLC: ${err.message}`)),
+      );
+      child.on('spawn', () => {
+        child.unref(); // VLC keeps running even if AniTOR closes
         resolve();
       });
     });
   }
 
-  private buildCommand(streamUrl: string): string {
-    const customPath = this.config.get<string>('vlcPath');
-
-    if (process.platform === 'win32') {
-      const vlcPath = customPath || 'C:\\Program Files\\VideoLAN\\VLC\\vlc.exe';
-      return fs.existsSync(vlcPath)
-        ? `start "" "${vlcPath}" "${streamUrl}"`
-        : `start "" vlc "${streamUrl}"`; // fall back to PATH
+  private command(url: string): [string, string[]] {
+    switch (process.platform) {
+      case 'win32': {
+        const candidates = [
+          join(process.env['ProgramFiles'] ?? 'C:\\Program Files', 'VideoLAN', 'VLC', 'vlc.exe'),
+          join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'VideoLAN', 'VLC', 'vlc.exe'),
+        ];
+        return [candidates.find((p) => existsSync(p)) ?? 'vlc', [url]];
+      }
+      case 'darwin':
+        return ['open', ['-a', 'VLC', url]];
+      default:
+        return ['vlc', [url]];
     }
-
-    if (process.platform === 'darwin') {
-      return customPath ? `"${customPath}" "${streamUrl}"` : `open -a VLC "${streamUrl}"`;
-    }
-
-    // Linux and everything else — assume vlc is on PATH unless overridden.
-    return customPath ? `"${customPath}" "${streamUrl}"` : `vlc "${streamUrl}"`;
   }
 }

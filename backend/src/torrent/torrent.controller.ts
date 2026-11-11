@@ -1,54 +1,73 @@
-import { Controller, Post, Get, Body, Req, Res, HttpCode } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { TorrentService } from './torrent.service';
-import { StartStreamDto } from './dto/start-stream.dto';
+import { HistoryService } from '../history/history.service.js';
+import { TorrentService } from './torrent.service.js';
 
-/**
- * Every route here maps 1:1 onto a method on TorrentService —
- * this controller intentionally has no logic of its own beyond
- * request/response wiring.
- */
-@Controller('api')
+@Controller()
 export class TorrentController {
-  constructor(private readonly torrentService: TorrentService) {}
+  constructor(
+    private readonly torrents: TorrentService,
+    private readonly history: HistoryService,
+  ) {}
 
+  // Nest answers POST with 201 by default; the old API used 200, so we keep 200.
   @Post('stream')
-  async startStream(@Body() dto: StartStreamDto) {
-    return this.torrentService.startStream(dto.magnetLink);
+  @HttpCode(200)
+  async start(@Body('magnetLink') magnetLink?: string) {
+    if (typeof magnetLink !== 'string' || !magnetLink.trim()) {
+      throw new BadRequestException('No magnet link provided');
+    }
+    const magnet = magnetLink.trim();
+    const title = await this.torrents.start(magnet);
+    this.history.add(title, magnet);
+    return { title };
   }
 
-  /**
-   * Uses @Res() directly (bypassing Nest's response serialization)
-   * because this streams raw video bytes with manual range headers —
-   * something Nest's normal "return a value, Nest sends it" flow
-   * isn't built for.
-   */
   @Get('video-stream')
-  async streamVideo(@Req() req: Request, @Res() res: Response) {
-    await this.torrentService.streamVideo(req, res);
+  videoStream(@Req() req: Request, @Res() res: Response) {
+    const { stream, start, end, size, mime } = this.torrents.readRange(req.headers.range);
+
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${size}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': end - start + 1,
+      'Content-Type': mime,
+      'Cache-Control': 'no-store',
+    });
+
+    res.on('close', () => stream.destroy());
+    stream.pipe(res);
   }
 
   @Post('pause-download')
   @HttpCode(200)
-  pauseDownload() {
-    return this.torrentService.pauseDownload();
+  pause() {
+    this.torrents.pause();
   }
 
   @Post('resume-download')
   @HttpCode(200)
-  resumeDownload() {
-    return this.torrentService.resumeDownload();
+  resume() {
+    this.torrents.resume();
   }
 
   @Post('stop-stream')
   @HttpCode(200)
-  async stopStream() {
-    await this.torrentService.stopStream();
-    return { stopped: true };
+  async stop() {
+    await this.torrents.destroyTorrent();
   }
 
   @Get('stats')
-  getStats() {
-    return this.torrentService.getStats();
+  stats() {
+    return this.torrents.stats();
   }
 }

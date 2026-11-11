@@ -1,20 +1,18 @@
-import { Controller, Get, Delete, Query, HttpCode } from '@nestjs/common';
-import { HistoryService } from './history.service';
-import { DeleteHistoryDto } from './dto/delete-history.dto';
+import { BadRequestException, Body, Controller, Delete, Get } from '@nestjs/common';
+import { HistoryService } from './history.service.js';
 
-@Controller('api/history')
+@Controller('history')
 export class HistoryController {
-  constructor(private readonly historyService: HistoryService) {}
+  constructor(private readonly history: HistoryService) {}
 
   @Get()
-  findAll() {
-    return this.historyService.findAll();
+  list() {
+    return this.history.list();
   }
 
   @Delete()
-  @HttpCode(200)
-  remove(@Query() dto: DeleteHistoryDto) {
-    this.historyService.remove(dto.magnetLink);
-    return { removed: true };
+  remove(@Body('magnetLink') magnetLink?: string) {
+    if (!magnetLink) throw new BadRequestException('magnetLink required');
+    this.history.remove(magnetLink);
   }
 }

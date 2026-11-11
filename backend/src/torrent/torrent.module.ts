@@ -1,17 +1,12 @@
 import { Module } from '@nestjs/common';
-import { TorrentController } from './torrent.controller';
-import { TorrentService } from './torrent.service';
-import { HistoryModule } from '../history/history.module';
+import { HistoryModule } from '../history/history.module.js';
+import { TorrentController } from './torrent.controller.js';
+import { TorrentService } from './torrent.service.js';
 
-/**
- * Imports HistoryModule because starting a stream also records
- * it in history — rather than duplicate that file I/O here, we
- * reuse HistoryService directly.
- */
 @Module({
   imports: [HistoryModule],
   controllers: [TorrentController],
   providers: [TorrentService],
-  exports: [TorrentService],
+  exports: [TorrentService], // VlcModule needs to know if a stream is active
 })
 export class TorrentModule {}
