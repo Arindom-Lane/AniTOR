@@ -1,4 +1,6 @@
-const { invoke } = window.__TAURI__.core;
+   // Address of the NestJS backend (it only listens on this computer)
+   const API = 'http://127.0.0.1:3000';
+   const { invoke } = window.__TAURI__.core;
 
 let greetInputEl;
 let greetMsgEl;
