@@ -6,9 +6,8 @@ export const PUBLIC_DIR = resolve(process.env.ANITOR_PUBLIC_DIR ?? join(process.
 export const METADATA_TIMEOUT_MS = Number(process.env.METADATA_TIMEOUT_MS ?? 60_000);
 export const IDLE_TIMEOUT_MS = 30_000;
 export const ALLOWED_ORIGINS = [
-    'tauri://localhost',
-    'http://tauri.localhost',
-    'https://tauri.localhost',
-    'http://localhost:1420',
+    /^tauri:\/\/localhost$/,
+    /^https?:\/\/tauri\.localhost$/,
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
 ];
 //# sourceMappingURL=config.js.map

@@ -53,6 +53,7 @@
     "vitest": "^4.1.2"
   },
   "allowScripts": {
-    "node-datachannel@0.32.3": true
+    "node-datachannel@0.32.3": true,
+    "utp-native@2.5.3": true
   }
 }

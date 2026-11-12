@@ -21,9 +21,8 @@ export const IDLE_TIMEOUT_MS = 30_000;
 
 // Pages allowed to call this API from a browser. Plain Tauri windows use
 // these origins; 1420 is the dev-server port of Tauri's default template.
-export const ALLOWED_ORIGINS = [
-  'tauri://localhost',
-  'http://tauri.localhost',
-  'https://tauri.localhost',
-  'http://localhost:1420',
+export const ALLOWED_ORIGINS: RegExp[] = [
+  /^tauri:\/\/localhost$/,
+  /^https?:\/\/tauri\.localhost$/,
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
 ];
