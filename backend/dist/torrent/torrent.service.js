@@ -8,6 +8,7 @@ var TorrentService_1;
 import { BadRequestException, ConflictException, GatewayTimeoutException, HttpException, HttpStatus, Injectable, Logger, NotFoundException, } from '@nestjs/common';
 import MemoryStore from 'memory-chunk-store';
 import { extname } from 'node:path';
+import { Readable } from 'node:stream';
 import WebTorrent from 'webtorrent';
 import { IDLE_TIMEOUT_MS, METADATA_TIMEOUT_MS } from '../config.js';
 const MIME = {
@@ -16,6 +17,7 @@ const MIME = {
     '.webm': 'video/webm',
     '.avi': 'video/x-msvideo',
 };
+const WINDOW_BYTES = 4 * 1024 * 1024;
 let TorrentService = TorrentService_1 = class TorrentService {
     log = new Logger(TorrentService_1.name);
     client = new WebTorrent();
@@ -33,16 +35,16 @@ let TorrentService = TorrentService_1 = class TorrentService {
         await this.destroyTorrent();
         this.client.destroy();
     }
-    async start(magnetLink) {
+    async start(source) {
         await this.destroyTorrent();
         this.lastActivity = Date.now();
         this.paused = false;
         let torrent;
         try {
-            torrent = this.client.add(magnetLink, { store: MemoryStore });
+            torrent = this.client.add(source, { store: MemoryStore, deselect: true });
         }
         catch {
-            throw new BadRequestException('Invalid magnet link');
+            throw new BadRequestException('Invalid magnet link or .torrent file');
         }
         this.current = torrent;
         torrent.on('error', (err) => this.log.warn(`torrent error: ${String(err)}`));
@@ -58,10 +60,12 @@ let TorrentService = TorrentService_1 = class TorrentService {
             await this.destroyTorrent(torrent);
             throw new NotFoundException('No video file found in torrent');
         }
-        torrent.pause();
         this.paused = true;
         this.lastActivity = Date.now();
-        return video.name;
+        return {
+            title: video.name,
+            magnet: typeof source === 'string' ? source : torrent.magnetURI,
+        };
     }
     async destroyTorrent(only) {
         const torrent = this.current;
@@ -108,47 +112,86 @@ let TorrentService = TorrentService_1 = class TorrentService {
             peers: t.numPeers,
         };
     }
-    readRange(rangeHeader) {
+    resolveRange(rangeHeader) {
         const torrent = this.current;
         if (!torrent)
             throw new BadRequestException('No active torrent');
         const file = this.getVideoFile(torrent);
         if (!file)
             throw new NotFoundException('No video file');
-        if (!rangeHeader)
-            throw new BadRequestException('Range header required');
-        const match = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader);
-        if (!match)
-            throw this.badRange();
-        const start = Number(match[1]);
-        const end = match[2]
-            ? Math.min(Number(match[2]), file.length - 1)
-            : Math.min(start + 4 * 1024 * 1024, file.length - 1);
-        if (start > end)
-            throw this.badRange();
-        const pieceLen = torrent.pieceLength;
-        const lastPiece = torrent.pieces.length - 1;
-        const p0 = Math.max(0, Math.floor((file.offset + start) / pieceLen));
-        const p1 = Math.min(Math.floor((file.offset + end) / pieceLen) + 2, lastPiece);
-        if (this.paused) {
-            torrent.resume();
-            this.paused = false;
+        const size = file.length;
+        const mime = MIME[extname(file.name).toLowerCase()] ?? 'video/mp4';
+        let start = 0;
+        let end = size - 1;
+        let partial = false;
+        if (rangeHeader) {
+            const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+            if (!m || (m[1] === '' && m[2] === ''))
+                throw this.badRange();
+            if (m[1] === '') {
+                const n = Number(m[2]);
+                if (n === 0)
+                    throw this.badRange();
+                start = Math.max(0, size - n);
+            }
+            else {
+                start = Number(m[1]);
+                if (m[2] !== '')
+                    end = Math.min(Number(m[2]), size - 1);
+            }
+            if (start >= size || start > end)
+                throw this.badRange();
+            partial = true;
         }
-        torrent.deselect(0, lastPiece);
-        torrent.select(p0, p1, true);
-        const stream = file.createReadStream({ start, end });
+        return { file, start, end, size, mime, partial };
+    }
+    openStream({ file, start, end }) {
+        const torrent = this.current;
+        if (!torrent)
+            throw new BadRequestException('No active torrent');
+        const stream = Readable.from(this.windowed(torrent, file, start, end), {
+            objectMode: false,
+        });
         this.streams.add(stream);
         this.lastActivity = Date.now();
-        stream.on('data', () => (this.lastActivity = Date.now()));
         stream.on('error', (err) => this.log.error(`stream: ${err.message}`));
         stream.on('close', () => this.streams.delete(stream));
-        return {
-            stream,
-            start,
-            end,
-            size: file.length,
-            mime: MIME[extname(file.name).toLowerCase()] ?? 'video/mp4',
-        };
+        return stream;
+    }
+    async *windowed(torrent, file, start, end) {
+        let pos = start;
+        let selected = null;
+        try {
+            while (pos <= end) {
+                const winEnd = Math.min(pos + WINDOW_BYTES - 1, end);
+                if (torrent.destroyed)
+                    return;
+                if (this.paused) {
+                    torrent.resume();
+                    this.paused = false;
+                }
+                const pieceLen = torrent.pieceLength;
+                const lastPiece = torrent.pieces.length - 1;
+                const p0 = Math.max(0, Math.floor((file.offset + pos) / pieceLen));
+                const p1 = Math.min(Math.floor((file.offset + winEnd) / pieceLen) + 2, lastPiece);
+                if (selected)
+                    torrent.deselect(selected[0], selected[1]);
+                torrent.select(p0, p1, true);
+                selected = [p0, p1];
+                for await (const chunk of file.createReadStream({
+                    start: pos,
+                    end: winEnd,
+                })) {
+                    this.lastActivity = Date.now();
+                    yield chunk;
+                }
+                pos = winEnd + 1;
+            }
+        }
+        finally {
+            if (selected && !torrent.destroyed)
+                torrent.deselect(selected[0], selected[1]);
+        }
     }
     getVideoFile(torrent) {
         return torrent.files

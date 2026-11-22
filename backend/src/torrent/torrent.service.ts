@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import MemoryStore from 'memory-chunk-store';
 import { extname } from 'node:path';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import WebTorrent from 'webtorrent';
 import type { Torrent, TorrentFile } from 'webtorrent';
 import { IDLE_TIMEOUT_MS, METADATA_TIMEOUT_MS } from '../config.js';
@@ -24,13 +24,23 @@ const MIME: Record<string, string> = {
   '.avi': 'video/x-msvideo',
 };
 
-export interface RangeResult {
-  stream: Readable;
+export interface StartedTorrent {
+  title: string;
+  magnet: string;
+}
+
+export interface StreamRange {
+  file: TorrentFile;
   start: number;
-  end: number;
+  end: number; // inclusive
   size: number;
   mime: string;
+  partial: boolean; // true -> answer 206, false -> answer 200
 }
+
+// The player may ask for the whole rest of the file, but we only ever let
+// WebTorrent work on one window of this size at a time (RAM friendly).
+const WINDOW_BYTES = 4 * 1024 * 1024;
 
 @Injectable()
 export class TorrentService implements OnModuleInit, OnModuleDestroy {
@@ -45,7 +55,9 @@ export class TorrentService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     // Without this an unexpected WebTorrent error would crash the whole process.
-    this.client.on('error', (err) => this.log.error(`client error: ${String(err)}`));
+    this.client.on('error', (err) =>
+      this.log.error(`client error: ${String(err)}`),
+    );
     this.idleTimer = setInterval(() => void this.cleanupIfIdle(), 5000);
   }
 
@@ -59,8 +71,12 @@ export class TorrentService implements OnModuleInit, OnModuleDestroy {
   // Start / stop
   // ------------------------------------------------------------------
 
-  /** Adds the magnet, waits for metadata, returns the video file name. */
-  async start(magnetLink: string): Promise<string> {
+  /**
+   * Adds a magnet link (string) or the contents of a .torrent file (Buffer),
+   * waits for metadata, and returns the video's name plus a magnet link that
+   * can be saved in the history.
+   */
+  async start(source: string | Buffer): Promise<StartedTorrent> {
     await this.destroyTorrent();
     this.lastActivity = Date.now();
     this.paused = false;
@@ -68,12 +84,16 @@ export class TorrentService implements OnModuleInit, OnModuleDestroy {
     let torrent: Torrent;
     try {
       // MemoryStore = pieces live in RAM, nothing is written to your SSD.
-      torrent = this.client.add(magnetLink, { store: MemoryStore });
+      // deselect = start with NO pieces selected. Without it WebTorrent begins
+      // downloading the whole episode the moment it knows what the files are.
+      torrent = this.client.add(source, { store: MemoryStore, deselect: true });
     } catch {
-      throw new BadRequestException('Invalid magnet link');
+      throw new BadRequestException('Invalid magnet link or .torrent file');
     }
     this.current = torrent;
-    torrent.on('error', (err) => this.log.warn(`torrent error: ${String(err)}`));
+    torrent.on('error', (err) =>
+      this.log.warn(`torrent error: ${String(err)}`),
+    );
 
     try {
       await this.whenReady(torrent);
@@ -88,11 +108,18 @@ export class TorrentService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException('No video file found in torrent');
     }
 
-    // Halt everything; readRange() resumes it when the player asks for data.
-    torrent.pause();
+    // "paused" here only means "nothing is being fetched yet" (deselect: true keeps
+    // it idle until the player asks for data). We deliberately do NOT call
+    // torrent.pause(): WebTorrent destroys every peer that connects while paused,
+    // and a .torrent file has no metadata phase to connect peers beforehand.
     this.paused = true;
     this.lastActivity = Date.now();
-    return video.name;
+    // for a magnet link keep exactly what the user gave us; for a .torrent file
+    // WebTorrent builds an equivalent magnet link for the history
+    return {
+      title: video.name,
+      magnet: typeof source === 'string' ? source : torrent.magnetURI,
+    };
   }
 
   /** Tears the torrent down. If `only` is given, acts only if it is still the current one. */
@@ -155,52 +182,102 @@ export class TorrentService implements OnModuleInit, OnModuleDestroy {
   // Byte-range streaming
   // ------------------------------------------------------------------
 
-  readRange(rangeHeader?: string): RangeResult {
+  /** Works out which bytes the player wants. No Range header = the whole file. */
+  resolveRange(rangeHeader?: string): StreamRange {
+    const torrent = this.current;
+    if (!torrent) throw new BadRequestException('No active torrent');
+    const file = this.getVideoFile(torrent);
+    if (!file) throw new NotFoundException('No video file');
+
+    const size = file.length;
+    const mime = MIME[extname(file.name).toLowerCase()] ?? 'video/mp4';
+    let start = 0;
+    let end = size - 1;
+    let partial = false;
+
+    if (rangeHeader) {
+      // bytes=a-b | bytes=a- | bytes=-n (last n bytes)
+      const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+      if (!m || (m[1] === '' && m[2] === '')) throw this.badRange();
+      if (m[1] === '') {
+        const n = Number(m[2]);
+        if (n === 0) throw this.badRange();
+        start = Math.max(0, size - n);
+      } else {
+        start = Number(m[1]);
+        if (m[2] !== '') end = Math.min(Number(m[2]), size - 1);
+      }
+      if (start >= size || start > end) throw this.badRange();
+      partial = true;
+    }
+    return { file, start, end, size, mime, partial };
+  }
+
+  /** Opens the byte stream for a resolved range. */
+  openStream({ file, start, end }: StreamRange): Readable {
     const torrent = this.current;
     if (!torrent) throw new BadRequestException('No active torrent');
 
-    const file = this.getVideoFile(torrent);
-    if (!file) throw new NotFoundException('No video file');
-    if (!rangeHeader) throw new BadRequestException('Range header required');
-
-    const match = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader);
-    if (!match) throw this.badRange();
-
-    const start = Number(match[1]);
-    const end = match[2]
-      ? Math.min(Number(match[2]), file.length - 1)
-      : Math.min(start + 4 * 1024 * 1024, file.length - 1); // 4 MB window
-    if (start > end) throw this.badRange();
-
-    // Which torrent pieces cover this byte range? file.offset matters when the
-    // torrent has several files: the video does not start at byte 0 then.
-    const pieceLen = torrent.pieceLength;
-    const lastPiece = torrent.pieces.length - 1;
-    const p0 = Math.max(0, Math.floor((file.offset + start) / pieceLen));
-    const p1 = Math.min(Math.floor((file.offset + end) / pieceLen) + 2, lastPiece);
-
-    if (this.paused) {
-      torrent.resume();
-      this.paused = false;
-    }
-    torrent.deselect(0, lastPiece); // clear everything...
-    torrent.select(p0, p1, true); // ...and fetch only what playback needs now
-
-    const stream = file.createReadStream({ start, end });
+    const stream = Readable.from(this.windowed(torrent, file, start, end), {
+      objectMode: false,
+    });
     this.streams.add(stream);
     this.lastActivity = Date.now();
 
-    stream.on('data', () => (this.lastActivity = Date.now()));
     stream.on('error', (err) => this.log.error(`stream: ${err.message}`));
     stream.on('close', () => this.streams.delete(stream));
+    return stream;
+  }
 
-    return {
-      stream,
-      start,
-      end,
-      size: file.length,
-      mime: MIME[extname(file.name).toLowerCase()] ?? 'video/mp4',
-    };
+  /**
+   * Yields start..end (inclusive) one window at a time. The player sees one
+   * long response, but WebTorrent only ever gets asked for a small piece
+   * range, so we never start downloading the whole episode.
+   */
+  private async *windowed(
+    torrent: Torrent,
+    file: TorrentFile,
+    start: number,
+    end: number,
+  ): AsyncGenerator<Uint8Array> {
+    let pos = start;
+    let selected: [number, number] | null = null;
+
+    try {
+      while (pos <= end) {
+        const winEnd = Math.min(pos + WINDOW_BYTES - 1, end);
+
+        if (torrent.destroyed) return;
+        if (this.paused) {
+          torrent.resume();
+          this.paused = false;
+        }
+        const pieceLen = torrent.pieceLength;
+        const lastPiece = torrent.pieces.length - 1;
+        const p0 = Math.max(0, Math.floor((file.offset + pos) / pieceLen));
+        const p1 = Math.min(
+          Math.floor((file.offset + winEnd) / pieceLen) + 2,
+          lastPiece,
+        );
+
+        // drop our own previous window, then ask only for what playback needs now
+        if (selected) torrent.deselect(selected[0], selected[1]);
+        torrent.select(p0, p1, true);
+        selected = [p0, p1];
+
+        for await (const chunk of file.createReadStream({
+          start: pos,
+          end: winEnd,
+        })) {
+          this.lastActivity = Date.now();
+          yield chunk;
+        }
+        pos = winEnd + 1;
+      }
+    } finally {
+      if (selected && !torrent.destroyed)
+        torrent.deselect(selected[0], selected[1]);
+    }
   }
 
   // ------------------------------------------------------------------
@@ -223,18 +300,30 @@ export class TorrentService implements OnModuleInit, OnModuleDestroy {
         else resolve();
       };
       const timer = setTimeout(
-        () => finish(new GatewayTimeoutException('Timed out looking for this torrent (no peers?)')),
+        () =>
+          finish(
+            new GatewayTimeoutException(
+              'Timed out looking for this torrent (no peers?)',
+            ),
+          ),
         METADATA_TIMEOUT_MS,
       );
 
       torrent.once('ready', () => finish());
-      torrent.once('error', (e) => finish(new BadRequestException(`Torrent error: ${String(e)}`)));
-      torrent.once('close', () => finish(new ConflictException('Replaced by another stream')));
+      torrent.once('error', (e) =>
+        finish(new BadRequestException(`Torrent error: ${String(e)}`)),
+      );
+      torrent.once('close', () =>
+        finish(new ConflictException('Replaced by another stream')),
+      );
     });
   }
 
   private badRange() {
-    return new HttpException('Invalid range', HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE);
+    return new HttpException(
+      'Invalid range',
+      HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE,
+    );
   }
 
   private async cleanupIfIdle() {

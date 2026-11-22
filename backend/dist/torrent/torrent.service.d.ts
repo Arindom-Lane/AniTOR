@@ -1,12 +1,17 @@
 import { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import type { Readable } from 'node:stream';
-import type { Torrent } from 'webtorrent';
-export interface RangeResult {
-    stream: Readable;
+import { Readable } from 'node:stream';
+import type { Torrent, TorrentFile } from 'webtorrent';
+export interface StartedTorrent {
+    title: string;
+    magnet: string;
+}
+export interface StreamRange {
+    file: TorrentFile;
     start: number;
     end: number;
     size: number;
     mime: string;
+    partial: boolean;
 }
 export declare class TorrentService implements OnModuleInit, OnModuleDestroy {
     private readonly log;
@@ -18,7 +23,7 @@ export declare class TorrentService implements OnModuleInit, OnModuleDestroy {
     private idleTimer?;
     onModuleInit(): void;
     onModuleDestroy(): Promise<void>;
-    start(magnetLink: string): Promise<string>;
+    start(source: string | Buffer): Promise<StartedTorrent>;
     destroyTorrent(only?: Torrent): Promise<void>;
     hasActive(): boolean;
     pause(): void;
@@ -36,7 +41,9 @@ export declare class TorrentService implements OnModuleInit, OnModuleDestroy {
         downloadSpeed: string;
         peers: number;
     };
-    readRange(rangeHeader?: string): RangeResult;
+    resolveRange(rangeHeader?: string): StreamRange;
+    openStream({ file, start, end }: StreamRange): Readable;
+    private windowed;
     private getVideoFile;
     private whenReady;
     private badRange;

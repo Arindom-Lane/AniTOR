@@ -13,6 +13,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 import { BadRequestException, Body, Controller, Get, HttpCode, Post, Req, Res, } from '@nestjs/common';
 import { HistoryService } from '../history/history.service.js';
 import { TorrentService } from './torrent.service.js';
+const MAX_TORRENT_FILE_BYTES = 8 * 1024 * 1024;
 let TorrentController = class TorrentController {
     torrents;
     history;
@@ -20,24 +21,37 @@ let TorrentController = class TorrentController {
         this.torrents = torrents;
         this.history = history;
     }
-    async start(magnetLink) {
-        if (typeof magnetLink !== 'string' || !magnetLink.trim()) {
-            throw new BadRequestException('No magnet link provided');
+    async start(body) {
+        let source;
+        if (typeof body?.torrentFile === 'string' && body.torrentFile) {
+            source = Buffer.from(body.torrentFile, 'base64');
+            if (source.length === 0 || source.length > MAX_TORRENT_FILE_BYTES) {
+                throw new BadRequestException('Invalid .torrent file');
+            }
         }
-        const magnet = magnetLink.trim();
-        const title = await this.torrents.start(magnet);
+        else if (typeof body?.magnetLink === 'string' && body.magnetLink.trim()) {
+            source = body.magnetLink.trim();
+        }
+        else {
+            throw new BadRequestException('No magnet link or .torrent file provided');
+        }
+        const { title, magnet } = await this.torrents.start(source);
         this.history.add(title, magnet);
         return { title };
     }
     videoStream(req, res) {
-        const { stream, start, end, size, mime } = this.torrents.readRange(req.headers.range);
-        res.writeHead(206, {
-            'Content-Range': `bytes ${start}-${end}/${size}`,
+        const range = this.torrents.resolveRange(req.headers.range);
+        const { start, end, size, mime, partial } = range;
+        res.writeHead(partial ? 206 : 200, {
+            ...(partial ? { 'Content-Range': `bytes ${start}-${end}/${size}` } : {}),
             'Accept-Ranges': 'bytes',
             'Content-Length': end - start + 1,
             'Content-Type': mime,
             'Cache-Control': 'no-store',
         });
+        if (req.method === 'HEAD')
+            return void res.end();
+        const stream = this.torrents.openStream(range);
         res.on('close', () => stream.destroy());
         stream.pipe(res);
     }
@@ -57,9 +71,9 @@ let TorrentController = class TorrentController {
 __decorate([
     Post('stream'),
     HttpCode(200),
-    __param(0, Body('magnetLink')),
+    __param(0, Body()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], TorrentController.prototype, "start", null);
 __decorate([

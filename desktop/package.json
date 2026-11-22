@@ -11,5 +11,7 @@
   },
   "dependencies": {
     "artplayer": "^5.4.0"
-  }
+  },
+  "prepare-backend": "node scripts/prepare-backend.mjs",
+"build:app": "npm run prepare-backend && tauri build --config src-tauri/tauri.bundle.conf.json"
 }

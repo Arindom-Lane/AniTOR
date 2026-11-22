@@ -5,10 +5,13 @@ export declare class TorrentController {
     private readonly torrents;
     private readonly history;
     constructor(torrents: TorrentService, history: HistoryService);
-    start(magnetLink?: string): Promise<{
+    start(body?: {
+        magnetLink?: unknown;
+        torrentFile?: unknown;
+    }): Promise<{
         title: string;
     }>;
-    videoStream(req: Request, res: Response): void;
+    videoStream(req: Request, res: Response): undefined;
     pause(): void;
     resume(): void;
     stop(): Promise<void>;

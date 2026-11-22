@@ -11,6 +11,7 @@ declare module 'webtorrent' {
 
   export interface Torrent {
     infoHash: string;
+    magnetURI: string;
     ready: boolean;
     destroyed: boolean;
     files: TorrentFile[];
@@ -31,7 +32,7 @@ declare module 'webtorrent' {
 
   export default class WebTorrent {
     constructor(opts?: Record<string, unknown>);
-    add(id: string, opts?: Record<string, unknown>): Torrent;
+    add(id: string | Uint8Array, opts?: Record<string, unknown>): Torrent;
     destroy(cb?: (err?: Error | string | null) => void): void;
     on(event: 'error', listener: (err: Error | string) => void): this;
   }
